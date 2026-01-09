@@ -1,0 +1,401 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { ObjectId } from 'mongodb';
+import { ZodError, z } from 'zod';
+import {
+  getTripsCollection,
+  getUsersCollection,
+  getMessagesCollection,
+  getRunsCollection,
+  initIndexes,
+} from '@/lib/db/models';
+import { callMasterAgent, formatMasterResponse } from '@/lib/agents/master';
+import { callTransportAgent } from '@/lib/agents/transport';
+import { callStayAgent } from '@/lib/agents/stay';
+import { callFoodAgent } from '@/lib/agents/food';
+import { tripContextSchema, type Task, type SpecialistOutput } from '@/lib/schemas/agent';
+import {
+  ensureQuestionLedger,
+  markQuestionsAsAnswered,
+  filterMasterOutput,
+  getQuestionContext,
+} from '@/lib/utils/questionLedger';
+
+// Request validation schema
+const chatRequestSchema = z.object({
+  tripId: z.string().min(1),
+  message: z.string().min(1),
+});
+
+export async function POST(req: NextRequest) {
+  try {
+    await initIndexes();
+
+    // Validate request body
+    const body = await req.json();
+    const { tripId, message } = chatRequestSchema.parse(body);
+
+    // Load trip
+    const tripsCollection = await getTripsCollection();
+    const trip = await tripsCollection.findOne({ _id: new ObjectId(tripId) });
+
+    if (!trip) {
+      return NextResponse.json({ error: 'Trip not found' }, { status: 404 });
+    }
+
+    // Load user
+    const usersCollection = await getUsersCollection();
+    const user = await usersCollection.findOne({ _id: trip.userId });
+
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    // Load recent messages
+    const messagesCollection = await getMessagesCollection();
+    const recentMessages = await messagesCollection
+      .find({ tripId: new ObjectId(tripId) })
+      .sort({ createdAt: 1 })
+      .limit(20)
+      .toArray();
+
+    // Append user message
+    const now = new Date();
+    const userMessage = {
+      tripId: new ObjectId(tripId),
+      role: 'user' as const,
+      content: message,
+      createdAt: now,
+    };
+
+    const userMessageResult = await messagesCollection.insertOne(userMessage);
+    const userMessageId = userMessageResult.insertedId;
+
+    // Parse current trip context and ensure question ledger exists
+    let currentTripContext = null;
+    if (trip.tripContext && Object.keys(trip.tripContext).length > 0) {
+      const parsed = tripContextSchema.safeParse(trip.tripContext);
+      if (parsed.success) {
+        currentTripContext = ensureQuestionLedger(parsed.data);
+      }
+    }
+
+    // Mark any questions as answered if user provided info
+    if (currentTripContext) {
+      currentTripContext = markQuestionsAsAnswered(currentTripContext, message);
+    }
+
+    // Get question context for master agent
+    const { answered, outstanding } =
+      currentTripContext ? getQuestionContext(currentTripContext) : { answered: [], outstanding: [] };
+
+    // Call master agent
+    const agentResult = await callMasterAgent({
+      currentTripContext,
+      conversationHistory: recentMessages,
+      user,
+      newUserMessage: message,
+      answeredQuestions: answered,
+      outstandingQuestions: outstanding,
+    });
+
+    const runsCollection = await getRunsCollection();
+
+    if (!agentResult.success || !agentResult.output) {
+      // Log detailed error for debugging
+      console.error('Master agent failed:', {
+        error: agentResult.error,
+        rawResponse: agentResult.rawResponse,
+      });
+
+      // Create error run record
+      await runsCollection.insertOne({
+        tripId: new ObjectId(tripId),
+        userMessageId,
+        status: 'error',
+        error: agentResult.error || 'Unknown error',
+        createdAt: now,
+      });
+
+      return NextResponse.json(
+        {
+          error: 'Failed to process message',
+          details: agentResult.error,
+        },
+        { status: 500 }
+      );
+    }
+
+    const masterOutput = agentResult.output;
+
+    // Branch based on mode
+    if (masterOutput.mode === 'CLARIFY') {
+      // Mode: CLARIFY - Ask questions, update trip context, no specialist execution
+
+      // Filter duplicate questions before updating ledger
+      const filteredOutput = filterMasterOutput(
+        currentTripContext,
+        masterOutput
+      );
+
+      // Format master response for user
+      const assistantMessage = formatMasterResponse(filteredOutput);
+
+      // Save master message
+      const masterMessageResult = await messagesCollection.insertOne({
+        tripId: new ObjectId(tripId),
+        role: 'master',
+        agentName: 'Master',
+        content: assistantMessage,
+        parsed: filteredOutput as Record<string, unknown>,
+        createdAt: new Date(),
+      });
+
+      // Update trip context with filtered output
+      await tripsCollection.updateOne(
+        { _id: new ObjectId(tripId) },
+        {
+          $set: {
+            tripContext: filteredOutput.updatedTripContext as Record<string, unknown>,
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      // Create run record (CLARIFY mode)
+      const runResult = await runsCollection.insertOne({
+        tripId: new ObjectId(tripId),
+        userMessageId,
+        masterOutput: filteredOutput as Record<string, unknown>,
+        status: 'ok',
+        createdAt: new Date(),
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          tripId,
+          assistantMessage,
+          masterMessageId: masterMessageResult.insertedId.toString(),
+          tripContext: filteredOutput.updatedTripContext,
+          run: {
+            id: runResult.insertedId.toString(),
+            masterOutput: filteredOutput,
+          },
+        },
+        { status: 200 }
+      );
+    } else if (masterOutput.mode === 'DISPATCH') {
+      // Mode: DISPATCH - Execute specialists in parallel
+
+      const tasks = masterOutput.tasks;
+
+      // Execute specialists in parallel
+      const specialistPromises = tasks.map(async (task: Task) => {
+        try {
+          if (task.specialist === 'transport') {
+            const result = await callTransportAgent(task);
+            return { task, ...result };
+          } else if (task.specialist === 'stay') {
+            const result = await callStayAgent(task);
+            return { task, ...result };
+          } else if (task.specialist === 'food') {
+            const result = await callFoodAgent(task);
+            return { task, ...result };
+          } else {
+            return {
+              task,
+              success: false,
+              error: `Unknown specialist: ${task.specialist}`,
+            };
+          }
+        } catch (error) {
+          return {
+            task,
+            success: false,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          };
+        }
+      });
+
+      const specialistResults = await Promise.all(specialistPromises);
+
+      // Extract successful outputs
+      const specialistOutputs: SpecialistOutput[] = specialistResults
+        .filter((result) => !result.error)
+        .map((result) => {
+          const { task, ...output } = result;
+          return output as SpecialistOutput;
+        });
+
+      // Collect errors
+      const errors: string[] = specialistResults
+        .filter((result) => result.error)
+        .map((result) =>
+          `${result.task.specialist} (${result.task.taskName}): ${result.error || 'Unknown error'}`
+        );
+
+      // Even if some specialists fail, continue with merge if we have at least one success
+      if (specialistOutputs.length === 0) {
+        // All specialists failed - create error run
+        await runsCollection.insertOne({
+          tripId: new ObjectId(tripId),
+          userMessageId,
+          masterOutput: masterOutput as Record<string, unknown>,
+          tasks: tasks as Record<string, unknown>[],
+          status: 'error',
+          error: `All specialists failed: ${errors.join('; ')}`,
+          createdAt: new Date(),
+        });
+
+        return NextResponse.json(
+          {
+            error: 'All specialists failed to execute',
+            details: errors.join('; '),
+          },
+          { status: 500 }
+        );
+      }
+
+      // Call master agent again in FINALIZE mode to merge itinerary
+      const mergeResult = await callMasterAgent({
+        currentTripContext: masterOutput.updatedTripContext,
+        conversationHistory: recentMessages,
+        user,
+        newUserMessage: message,
+        answeredQuestions: answered,
+        outstandingQuestions: outstanding,
+        specialistOutputs,
+      });
+
+      if (!mergeResult.success || !mergeResult.output) {
+        // Merge failed - save partial run
+        await runsCollection.insertOne({
+          tripId: new ObjectId(tripId),
+          userMessageId,
+          masterOutput: masterOutput as Record<string, unknown>,
+          tasks: tasks as Record<string, unknown>[],
+          specialistOutputs: specialistOutputs as Record<string, unknown>[],
+          status: 'error',
+          error: `Merge failed: ${mergeResult.error || 'Unknown error'}`,
+          createdAt: new Date(),
+        });
+
+        return NextResponse.json(
+          {
+            error: 'Failed to merge itinerary',
+            details: mergeResult.error,
+          },
+          { status: 500 }
+        );
+      }
+
+      const finalizeOutput = mergeResult.output;
+
+      // Validate FINALIZE mode
+      if (finalizeOutput.mode !== 'FINALIZE') {
+        await runsCollection.insertOne({
+          tripId: new ObjectId(tripId),
+          userMessageId,
+          masterOutput: masterOutput as Record<string, unknown>,
+          tasks: tasks as Record<string, unknown>[],
+          specialistOutputs: specialistOutputs as Record<string, unknown>[],
+          status: 'error',
+          error: `Expected FINALIZE mode, got ${finalizeOutput.mode}`,
+          createdAt: new Date(),
+        });
+
+        return NextResponse.json(
+          {
+            error: 'Master agent returned invalid mode during merge',
+            details: `Expected FINALIZE, got ${finalizeOutput.mode}`,
+          },
+          { status: 500 }
+        );
+      }
+
+      const mergedItinerary = finalizeOutput.mergedItinerary;
+
+      // Format response for user
+      const assistantMessage = formatMasterResponse(finalizeOutput);
+
+      // Save master message
+      const masterMessageResult = await messagesCollection.insertOne({
+        tripId: new ObjectId(tripId),
+        role: 'master',
+        agentName: 'Master',
+        content: assistantMessage,
+        parsed: finalizeOutput as Record<string, unknown>,
+        createdAt: new Date(),
+      });
+
+      // Update trip with merged itinerary and updated context
+      await tripsCollection.updateOne(
+        { _id: new ObjectId(tripId) },
+        {
+          $set: {
+            tripContext: finalizeOutput.updatedTripContext as Record<string, unknown>,
+            activeItinerary: mergedItinerary as Record<string, unknown>,
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      // Create complete run record
+      const runResult = await runsCollection.insertOne({
+        tripId: new ObjectId(tripId),
+        userMessageId,
+        masterOutput: masterOutput as Record<string, unknown>,
+        tasks: tasks as Record<string, unknown>[],
+        specialistOutputs: specialistOutputs as Record<string, unknown>[],
+        mergedItinerary: mergedItinerary as Record<string, unknown>,
+        status: 'ok',
+        createdAt: new Date(),
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          tripId,
+          assistantMessage,
+          masterMessageId: masterMessageResult.insertedId.toString(),
+          tripContext: finalizeOutput.updatedTripContext,
+          itinerary: mergedItinerary,
+          run: {
+            id: runResult.insertedId.toString(),
+            masterOutput,
+            tasks,
+            specialistOutputs,
+            mergedItinerary,
+          },
+        },
+        { status: 200 }
+      );
+    } else {
+      // FINALIZE mode called directly (shouldn't happen in normal flow)
+      return NextResponse.json(
+        {
+          error: 'Invalid mode',
+          details: 'FINALIZE mode should only be called internally after DISPATCH',
+        },
+        { status: 400 }
+      );
+    }
+  } catch (error: unknown) {
+    console.error('Error in POST /api/chat:', error);
+
+    if (error instanceof ZodError) {
+      return NextResponse.json(
+        { error: 'Invalid input', details: error.issues },
+        { status: 400 }
+      );
+    }
+
+    return NextResponse.json(
+      {
+        error: 'Internal server error',
+        details: error instanceof Error ? error.message : 'Unknown error',
+      },
+      { status: 500 }
+    );
+  }
+}
