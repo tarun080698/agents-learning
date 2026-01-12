@@ -7,18 +7,22 @@ import { Button } from '@/components/ui/button';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { MergedItinerary, TripContext } from '@/lib/schemas/agent';
-import { Copy, CheckCircle2 } from 'lucide-react';
+import { Copy, CheckCircle2, Save, BookmarkPlus } from 'lucide-react';
 import { useState } from 'react';
 
 interface ItineraryPanelProps {
   itinerary: MergedItinerary | null;
   tripContext?: TripContext | null;
+  tripId?: string | null;
   onSelectOption?: (type: string, option: unknown) => void;
+  onSaved?: () => void;
 }
 
-export function ItineraryPanel({ itinerary, tripContext }: ItineraryPanelProps) {
+export function ItineraryPanel({ itinerary, tripContext, tripId, onSaved }: ItineraryPanelProps) {
   const [copiedItinerary, setCopiedItinerary] = useState(false);
   const [copiedJSON, setCopiedJSON] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
 
   if (!itinerary) {
     return (
@@ -47,6 +51,36 @@ export function ItineraryPanel({ itinerary, tripContext }: ItineraryPanelProps) 
     setTimeout(() => setCopiedJSON(false), 2000);
   };
 
+  const handleSaveItinerary = async () => {
+    if (!tripId || !itinerary) return;
+
+    try {
+      setSaving(true);
+      const response = await fetch(`/api/trips/${tripId}/itineraries`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itinerary,
+          tripContext,
+          name: `${itinerary.summary.substring(0, 50)}${itinerary.summary.length > 50 ? '...' : ''}`,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Failed to save itinerary');
+
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2000);
+
+      if (onSaved) {
+        onSaved();
+      }
+    } catch (error) {
+      console.error('Error saving itinerary:', error);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <Card className="h-full flex flex-col overflow-hidden">
       <CardHeader className="shrink-0">
@@ -56,6 +90,16 @@ export function ItineraryPanel({ itinerary, tripContext }: ItineraryPanelProps) 
             <CardDescription>{itinerary.summary}</CardDescription>
           </div>
           <div className="flex gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleSaveItinerary}
+              disabled={saving || !tripId}
+              className="shrink-0"
+            >
+              {saved ? <CheckCircle2 className="w-4 h-4" /> : <BookmarkPlus className="w-4 h-4" />}
+              <span className="ml-1">{saved ? 'Saved!' : 'Save'}</span>
+            </Button>
             <Button
               variant="outline"
               size="sm"

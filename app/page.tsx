@@ -6,6 +6,7 @@ import { TripsPanel } from '@/components/trips-panel';
 import { ChatPanel } from '@/components/chat-panel';
 import { TracePanel } from '@/components/trace-panel';
 import { ItineraryPanel } from '@/components/itinerary-panel';
+import { SavedItinerariesDrawer } from '@/components/saved-itineraries-drawer';
 import { Button } from '@/components/ui/button';
 import type { MasterOutput, TripContext, Task, SpecialistOutput, MergedItinerary } from '@/lib/schemas/agent';
 
@@ -43,6 +44,7 @@ export default function Home() {
   const [runStatus, setRunStatus] = useState<'in-progress' | 'completed' | 'failed'>('in-progress');
   const [error, setError] = useState<string | null>(null);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
+  const [drawerOpen, setDrawerOpen] = useState(false);
 
   useEffect(() => {
     // Check localStorage for existing session
@@ -238,6 +240,13 @@ export default function Home() {
     }
   };
 
+  const handleSelectSavedItinerary = (itinerary: MergedItinerary, tripContext?: TripContext | null) => {
+    setMergedItinerary(itinerary);
+    if (tripContext) {
+      setTripContext(tripContext);
+    }
+  };
+
   if (!isLoggedIn) {
     return <UsernameGate onLogin={handleLogin} />;
   }
@@ -261,7 +270,8 @@ export default function Home() {
           {/* Top row: Trips, Chat, Trace */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 min-h-0">
             {/* Trips panel */}
-            <div className="lg:col-span-1 h-full min-h-0">
+            <divonViewSavedItineraries={() => setDrawerOpen(true)}
+                 className="lg:col-span-1 h-full min-h-0">
               <TripsPanel
                 userId={userId}
                 trips={trips}
@@ -303,10 +313,19 @@ export default function Home() {
               <ItineraryPanel
                 itinerary={mergedItinerary}
                 tripContext={tripContext}
+                tripId={selectedTripId}
               />
             </div>
           )}
         </div>
+
+        {/* Saved Itineraries Drawer */}
+        <SavedItinerariesDrawer
+          open={drawerOpen}
+          onOpenChange={setDrawerOpen}
+          tripId={selectedTripId}
+          onSelectItinerary={handleSelectSavedItinerary}
+        />
       </div>
     </div>
   );

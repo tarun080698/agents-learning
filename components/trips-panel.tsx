@@ -2,6 +2,7 @@
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { BookOpen } from 'lucide-react';
 
 interface Trip {
   _id: string;
@@ -18,6 +19,7 @@ interface TripsPanelProps {
   selectedTripId: string | null;
   onSelectTrip: (tripId: string) => void;
   onNewTrip: () => void;
+  onViewSavedItineraries?: () => void;
   loading: boolean;
 }
 
@@ -26,6 +28,7 @@ export function TripsPanel({
   selectedTripId,
   onSelectTrip,
   onNewTrip,
+  onViewSavedItineraries,
   loading
 }: TripsPanelProps) {
   return (
@@ -35,9 +38,21 @@ export function TripsPanel({
         <CardDescription>Create and manage your travel plans</CardDescription>
       </CardHeader>
       <CardContent className="flex-1 flex flex-col gap-4 p-6 overflow-hidden min-h-0">
-        <Button onClick={onNewTrip} disabled={loading} className="w-full flex-shrink-0">
-          + New Trip
-        </Button>
+        <div className="flex gap-2 flex-shrink-0">
+          <Button onClick={onNewTrip} disabled={loading} className="flex-1">
+            + New Trip
+          </Button>
+          {onViewSavedItineraries && selectedTripId && (
+            <Button
+              onClick={onViewSavedItineraries}
+              disabled={loading}
+              variant="outline"
+              className="flex-shrink-0"
+            >
+              <BookOpen className="w-4 h-4" />
+            </Button>
+          )}
+        </div>
 
         <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin min-h-0">
           {trips.length === 0 ? (

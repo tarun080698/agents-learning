@@ -17,6 +17,13 @@ export interface Trip {
   status: 'draft' | 'planning' | 'final';
   tripContext: Record<string, unknown>;
   activeItinerary?: Record<string, unknown>;
+  savedItineraries?: Array<{
+    _id: string;
+    itinerary: Record<string, unknown>;
+    tripContext?: Record<string, unknown>;
+    savedAt: Date;
+    name?: string;
+  }>;
   createdAt: Date;
   updatedAt: Date;
 }
