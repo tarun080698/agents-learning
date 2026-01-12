@@ -207,7 +207,7 @@ export default function Home() {
         content,
         createdAt: new Date().toISOString(),
       };
-      setMessages(prev => [...prev, optimisticMessage]);
+      setMessages(prev => [...prev, optimisticMessage!]);
     }
 
     try {

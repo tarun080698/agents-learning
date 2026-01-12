@@ -6,6 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Separator } from '@/components/ui/separator';
 import { Badge } from '@/components/ui/badge';
 import { Loader2 } from 'lucide-react';
+import type { ItineraryOption, MultipleItineraries } from '@/lib/schemas/agent';
 
 // Simple markdown-like formatter for assistant messages
 function formatMessage(content: string) {
@@ -119,21 +120,6 @@ interface Message {
   agentName?: string;
   content: string;
   createdAt: string;
-}
-
-interface MultipleItineraries {
-  options: ItineraryOption[];
-  comparisonNote?: string;
-}
-
-interface ItineraryOption {
-  id: string;
-  title: string;
-  description: string;
-  highlights: string[];
-  estimatedTotalCost?: string;
-  tags: string[];
-  itinerary: any;
 }
 
 interface ChatPanelProps {
