@@ -41,28 +41,33 @@ function normalizeDatesInOutput(output: MasterOutput): MasterOutput {
       },
     };
   } else if (output.mode === 'FINALIZE') {
-    // FINALIZE mode: normalize dates in both updatedTripContext and mergedItinerary
+    // FINALIZE mode: normalize dates in updatedTripContext and all itinerary options
     const startDate = output.updatedTripContext.trip.dateRange.start;
     const endDate = output.updatedTripContext.trip.dateRange.end;
 
     const { start, end, assumptions } = normalizeTripDates(startDate, endDate);
 
-    // Normalize dates in each day of the itinerary
-    const normalizedDays = output.mergedItinerary.days.map((day) => {
-      if (!day.date) {
-        // If date is missing, skip normalization but ensure it's a string
-        return {
-          ...day,
-          date: start || new Date().toISOString().split('T')[0], // Fallback to start date or today
-        };
-      }
+    // Normalize dates in each itinerary option
+    const normalizedOptions = output.multipleItineraries.options.map((option) => ({
+      ...option,
+      itinerary: {
+        ...option.itinerary,
+        days: option.itinerary.days.map((day) => {
+          if (!day.date) {
+            return {
+              ...day,
+              date: start || new Date().toISOString().split('T')[0],
+            };
+          }
 
-      const { start: normalizedDate } = normalizeTripDates(day.date, day.date);
-      return {
-        ...day,
-        date: normalizedDate || day.date, // Fallback to original date if normalization fails
-      };
-    });
+          const { start: normalizedDate } = normalizeTripDates(day.date, day.date);
+          return {
+            ...day,
+            date: normalizedDate || day.date,
+          };
+        }),
+      },
+    }));
 
     return {
       ...output,
@@ -80,9 +85,9 @@ function normalizeDatesInOutput(output: MasterOutput): MasterOutput {
           ...assumptions,
         ],
       },
-      mergedItinerary: {
-        ...output.mergedItinerary,
-        days: normalizedDays,
+      multipleItineraries: {
+        ...output.multipleItineraries,
+        options: normalizedOptions,
       },
     };
   }
@@ -107,8 +112,22 @@ CRITICAL RULES:
 2. NEVER ask questions that have already been answered
 3. Make reasonable assumptions but list them in the assumptions array
 4. Update the tripContext with ALL information gathered so far
+5. GATHER COMPREHENSIVE INFORMATION - Ask 10-15 relevant questions before dispatching to gather rich context
+6. Be thorough but efficient - Don't exceed 20 questions total
 
 CURRENT DATE: ${currentDate} (use this for date validation)
+
+COMPREHENSIVE INFORMATION GATHERING:
+Before dispatching, ensure you have gathered information about:
+- Basic Trip Details: origin, destination(s), dates, number of travelers
+- Budget: overall budget level and currency
+- Travel Style: pace (relaxed/moderate/packed), interests, special occasions
+- Accommodation: preferred hotel/stay style, location preferences, amenities needed
+- Food & Dining: dietary restrictions, allergies, cuisine preferences, dining occasions
+- Activities: must-do experiences, interests (culture, nature, adventure, etc.), things to avoid
+- Transportation: mode preferences, comfort level, flexibility
+- Special Considerations: accessibility needs, age groups, celebrations, work requirements
+- Time Constraints: flexible dates, specific time requirements
 
 QUESTION LEDGER (CRITICAL - NO REPETITION):
 Previously Answered Questions (DO NOT ASK THESE AGAIN):
@@ -118,11 +137,12 @@ Outstanding Questions (waiting for answers):
 ${outstandingQuestions.length > 0 ? outstandingQuestions.map(q => `- "${q.text}"`).join('\n') : '- None'}
 
 MODE DECISION:
-- Use "CLARIFY" mode if critical information is missing AND you need to ask questions
-- Use "DISPATCH" mode when you have enough info to create detailed plans:
-  * Must have: origin, destination, start date, travelers, budget level, pace, hotel style, dietary, interests/must-do
+- Use "CLARIFY" mode if you need to ask questions to gather comprehensive trip details (aim for 10-15 questions total before dispatching)
+- Use "DISPATCH" mode ONLY when you have gathered sufficient detail:
+  * Must have: origin, destination, start date, end date, travelers, budget level, pace, hotel style, dietary, interests/must-do
+  * Should have: specific interests, cuisine preferences, activity types, accommodation location preferences
   * Transport preference is optional (can be assumed)
-- If you have enough info, output mode="DISPATCH" with tasks array
+- If you have comprehensive information, output mode="DISPATCH" with tasks array
 
 DATE HANDLING (CRITICAL):
 - When user provides dates without years (e.g., "16th Jan"), calculate next occurrence
@@ -191,6 +211,15 @@ CLARIFY MODE OUTPUT EXAMPLE:
   "nextStep": "Once these questions are answered, we can dispatch to specialists"
 }
 
+AVAILABLE SPECIALIST AGENTS (CRITICAL - ONLY USE THESE):
+You have exactly THREE specialist agents available:
+1. "transport" - Handles ALL transportation (flights, trains, buses, rental cars, local transit, airport transfers)
+2. "stay" - Handles ALL accommodation (hotels, hostels, Airbnb, resorts, location recommendations)
+3. "food" - Handles BOTH dining AND activities/experiences (restaurants, cafes, attractions, tours, activities, things to do)
+
+IMPORTANT: There is NO separate "activities" specialist. The "food" specialist handles both dining and activities.
+When dispatching, you MUST use ONLY these three specialist values: "transport", "stay", or "food"
+
 DISPATCH MODE OUTPUT:
 {
   "mode": "DISPATCH",
@@ -210,9 +239,9 @@ DISPATCH MODE OUTPUT:
     },
     {
       "taskId": "food-001",
-      "taskName": "Dining recommendations",
+      "taskName": "Dining and activities recommendations",
       "specialist": "food",
-      "instructions": "Vegan fine dining options in San Francisco. Note peanut allergy. Include 2-3 upscale restaurants and casual backups."
+      "instructions": "Vegan fine dining options in San Francisco. Note peanut allergy. Include 2-3 upscale restaurants and casual backups. Also suggest hiking and biking activities, famous landmarks, and must-do experiences."
     }
   ],
   "questions": [],
@@ -236,6 +265,8 @@ SPECIALIST OUTPUTS:
 ${JSON.stringify(specialistOutputs, null, 2)}
 
 FINALIZE MODE OUTPUT (REQUIRED - USE THIS STRUCTURE):
+CRITICAL: You MUST create 2-3 different itinerary options for the user to choose from!
+
 {
   "mode": "FINALIZE",
   "updatedTripContext": {
@@ -244,55 +275,90 @@ FINALIZE MODE OUTPUT (REQUIRED - USE THIS STRUCTURE):
     "openQuestions": [],
     "assumptions": [ /* keep existing + add new if needed */ ]
   },
-  "mergedItinerary": {
-    "summary": "Brief 2-3 sentence overview of the complete trip",
-    "days": [
+  "multipleItineraries": {
+    "options": [
       {
-        "dayNumber": 1,
-        "date": "2026-01-14",
-        "title": "Travel Day & Arrival",
-        "transport": {
-          "provider": "Amtrak",
-          "route": "Jersey City to Washington DC",
-          "estimatedCost": "$50"
-        },
-        "accommodation": {
-          "name": "The Darcy Hotel",
-          "area": "Downtown DC",
-          "estimatedCost": "$200/night"
-        },
-        "meals": [
-          {
-            "type": "dinner",
-            "recommendation": {
-              "name": "Fancy Radish",
-              "cuisine": "Vegetarian fine dining",
-              "estimatedCost": "$60",
-              "reservationNote": "Book 1 week ahead"
-            }
-          }
+        "id": "option-1",
+        "title": "Balanced Experience",
+        "description": "A well-rounded itinerary mixing culture, dining, and relaxation",
+        "highlights": [
+          "Mix of popular and hidden gems",
+          "Moderate pace with flexibility",
+          "Diverse dining experiences"
         ],
-        "activities": [
-          {
-            "time": "Evening",
-            "description": "Walk around the National Mall",
-            "location": "National Mall"
+        "estimatedTotalCost": "$800-1000",
+        "tags": ["Balanced", "Popular", "Flexible"],
+        "itinerary": {
+          "summary": "A balanced 3-day experience in Washington DC",
+          "days": [
+            {
+              "dayNumber": 1,
+              "date": "2026-01-14",
+              "title": "Travel Day & Arrival",
+              "transport": { "provider": "Amtrak", "route": "Jersey City to DC", "estimatedCost": "$50" },
+              "accommodation": { "name": "The Darcy Hotel", "area": "Downtown", "estimatedCost": "$200/night" },
+              "meals": [
+                { "type": "dinner", "recommendation": { "name": "Fancy Radish", "cuisine": "Vegetarian", "estimatedCost": "$60" } }
+              ],
+              "activities": [
+                { "time": "Evening", "description": "Walk the National Mall", "location": "National Mall" }
+              ]
+            }
+          ],
+          "alternativeOptions": {
+            "transport": [],
+            "stays": [],
+            "dining": []
           }
-        ]
+        }
+      },
+      {
+        "id": "option-2",
+        "title": "Budget-Conscious Adventure",
+        "description": "Maximize experiences while keeping costs lower",
+        "highlights": [
+          "Free museums and attractions",
+          "More casual dining options",
+          "Public transportation focus"
+        ],
+        "estimatedTotalCost": "$500-650",
+        "tags": ["Budget-Friendly", "Active", "Local"],
+        "itinerary": {
+          "summary": "An affordable yet rich Washington DC experience",
+          "days": [ /* similar structure with budget-friendly options */ ]
+        }
+      },
+      {
+        "id": "option-3",
+        "title": "Premium Comfort Experience",
+        "description": "Elevated accommodations and fine dining throughout",
+        "highlights": [
+          "Upscale hotels and dining",
+          "Private tours and experiences",
+          "Maximum comfort and convenience"
+        ],
+        "estimatedTotalCost": "$1500-2000",
+        "tags": ["Luxury", "Comfort", "Exclusive"],
+        "itinerary": {
+          "summary": "A premium Washington DC getaway with top-tier experiences",
+          "days": [ /* similar structure with premium options */ ]
+        }
       }
     ],
-    "alternativeOptions": {
-      "transport": [ /* other transport options from specialist */ ],
-      "stays": [ /* other hotel options */ ],
-      "dining": [ /* other restaurant options */ ]
-    }
+    "comparisonNote": "All options cover the same destinations and timeframe but differ in accommodation quality, dining choices, and overall budget."
   },
   "questions": [],
-  "shortSummary": "Your complete 3-day Washington DC itinerary is ready!",
-  "nextStep": "Review the itinerary and let me know if you'd like any adjustments"
+  "shortSummary": "I've created 3 different itinerary options for your trip - from budget-conscious to premium!",
+  "nextStep": "Review the options and let me know which one appeals to you most, or if you'd like adjustments to any of them"
 }
 
-CRITICAL: You MUST output mode="FINALIZE" when specialist outputs are present. Do not use DISPATCH or CLARIFY.`;
+CRITICAL RULES FOR FINALIZE MODE:
+1. Always create 2-3 distinct options with meaningful differences
+2. Vary the options by budget, pace, style, or focus
+3. Each option should have a clear theme and target audience
+4. Provide specific highlights and estimated costs for each
+5. Use tags to help users quickly understand each option
+6. You MUST output mode="FINALIZE" when specialist outputs are present. Do not use DISPATCH or CLARIFY.`;
   }
 
   return basePrompt;
@@ -527,7 +593,7 @@ export async function callMasterAgent(input: MasterAgentInput): Promise<MasterAg
           },
           {
             role: 'user',
-            content: `ERROR: You used mode="${normalizedOutput.mode}" but specialist outputs are present. You MUST use mode="FINALIZE" to merge the specialist recommendations into a day-by-day itinerary. Return the complete JSON with mode="FINALIZE" and include the mergedItinerary field.`,
+            content: `ERROR: You used mode="${normalizedOutput.mode}" but specialist outputs are present. You MUST use mode="FINALIZE" to merge the specialist recommendations into 2-3 different itinerary options. Return the complete JSON with mode="FINALIZE" and include the multipleItineraries field with options array.`,
           },
         ],
         response_format: { type: 'json_object' },
@@ -687,42 +753,39 @@ export function formatMasterResponse(output: MasterOutput): string {
       parts.push('');
     }
   } else if (output.mode === 'FINALIZE') {
-    // Show itinerary summary
-    const itinerary = output.mergedItinerary;
-    parts.push(`🎉 Your ${itinerary.days.length}-day itinerary is ready!`);
-    parts.push('');
-    parts.push(itinerary.summary);
-    parts.push('');
+    // Show multiple itinerary options summary
+    const multipleItineraries = output.multipleItineraries;
 
-    // Show brief day-by-day overview
-    itinerary.days.forEach((day) => {
-      parts.push(`**Day ${day.dayNumber}** (${day.date}): ${day.title}`);
-      if (day.accommodation) {
-        parts.push(`  🏨 ${day.accommodation.name}`);
-      }
-      if (day.meals && day.meals.length > 0) {
-        const dinnerCount = day.meals.filter(m => m.type === 'dinner').length;
-        const lunchCount = day.meals.filter(m => m.type === 'lunch').length;
-        if (dinnerCount > 0 || lunchCount > 0) {
-          parts.push(`  🍽️ ${dinnerCount + lunchCount} dining recommendation(s)`);
-        }
-      }
-      if (day.activities && day.activities.length > 0) {
-        parts.push(`  🎯 ${day.activities.length} activity(ies)`);
-      }
-    });
+    if (!multipleItineraries || !multipleItineraries.options) {
+      parts.push('⚠️ Error: Itinerary options not available');
+      return parts.join('\n');
+    }
+
+    parts.push(`🎉 I've created ${multipleItineraries.options.length} itinerary options for your trip!`);
     parts.push('');
 
-    // Show alternative options count
-    const altCount =
-      (itinerary.alternativeOptions?.transport?.length || 0) +
-      (itinerary.alternativeOptions?.stays?.length || 0) +
-      (itinerary.alternativeOptions?.dining?.length || 0);
-
-    if (altCount > 0) {
-      parts.push(`✨ ${altCount} alternative option(s) available`);
+    if (multipleItineraries.comparisonNote) {
+      parts.push(multipleItineraries.comparisonNote);
       parts.push('');
     }
+
+    // Show brief overview of each option
+    multipleItineraries.options.forEach((option, index) => {
+      parts.push(`**Option ${index + 1}: ${option.title}**`);
+      parts.push(option.description);
+      if (option.estimatedTotalCost) {
+        parts.push(`💰 Estimated Cost: ${option.estimatedTotalCost}`);
+      }
+      if (option.itinerary?.days) {
+        parts.push(`📅 ${option.itinerary.days.length} days`);
+      }
+      if (option.highlights && option.highlights.length > 0) {
+        parts.push(`✨ Highlights: ${option.highlights.slice(0, 2).join(', ')}${option.highlights.length > 2 ? '...' : ''}`);
+      }
+      parts.push('');
+    });
+
+    parts.push('Review the options below and select your preferred itinerary!');
   }
 
   // Add next step

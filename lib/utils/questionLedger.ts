@@ -193,14 +193,22 @@ export function getQuestionContext(tripContext: TripContext): {
 
 /**
  * Check if trip has enough information to dispatch to specialists
+ * Requires comprehensive information gathering (10-15 questions minimum)
  */
 export function isReadyToDispatch(tripContext: TripContext): boolean {
-  const { trip } = tripContext;
+  const { trip, questionLedger } = tripContext;
+
+  // Count answered questions to ensure we've gathered enough context
+  const answeredQuestions = questionLedger?.asked?.filter(q => q.status === 'answered').length || 0;
+
+  // Require at least 8 answered questions for comprehensive planning
+  const hasEnoughQuestions = answeredQuestions >= 8;
 
   // Required minimum fields
   const hasOrigin = !!trip.origin;
   const hasDestination = trip.destinations.length > 0;
   const hasStartDate = !!trip.dateRange.start;
+  const hasEndDate = !!trip.dateRange.end;
   const hasTravelers = !!trip.travelers;
   const hasBudgetLevel = !!trip.budget.level;
   const hasPace = !!trip.preferences.pace;
@@ -213,9 +221,11 @@ export function isReadyToDispatch(tripContext: TripContext): boolean {
   const hasTransportPreference = !!trip.preferences.transportPreference;
 
   return (
+    hasEnoughQuestions &&
     hasOrigin &&
     hasDestination &&
     hasStartDate &&
+    hasEndDate &&
     hasTravelers &&
     hasBudgetLevel &&
     hasPace &&

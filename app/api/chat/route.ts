@@ -58,17 +58,33 @@ export async function POST(req: NextRequest) {
       .limit(20)
       .toArray();
 
-    // Append user message
-    const now = new Date();
-    const userMessage = {
+    // Check if this exact message was already saved recently (within last 10 seconds)
+    // This prevents duplicates on retry
+    const tenSecondsAgo = new Date(Date.now() - 10000);
+    const existingMessage = await messagesCollection.findOne({
       tripId: new ObjectId(tripId),
-      role: 'user' as const,
+      role: 'user',
       content: message,
-      createdAt: now,
-    };
+      createdAt: { $gte: tenSecondsAgo }
+    });
 
-    const userMessageResult = await messagesCollection.insertOne(userMessage);
-    const userMessageId = userMessageResult.insertedId;
+    let userMessageId: ObjectId;
+    if (existingMessage) {
+      // Reuse the existing message instead of creating a duplicate
+      userMessageId = existingMessage._id;
+    } else {
+      // Append new user message
+      const now = new Date();
+      const userMessage = {
+        tripId: new ObjectId(tripId),
+        role: 'user' as const,
+        content: message,
+        createdAt: now,
+      };
+
+      const userMessageResult = await messagesCollection.insertOne(userMessage);
+      userMessageId = userMessageResult.insertedId;
+    }
 
     // Parse current trip context and ensure question ledger exists
     let currentTripContext = null;
@@ -313,7 +329,7 @@ export async function POST(req: NextRequest) {
         );
       }
 
-      const mergedItinerary = finalizeOutput.mergedItinerary;
+      const multipleItineraries = finalizeOutput.multipleItineraries;
 
       // Format response for user
       const assistantMessage = formatMasterResponse(finalizeOutput);
@@ -328,13 +344,13 @@ export async function POST(req: NextRequest) {
         createdAt: new Date(),
       });
 
-      // Update trip with merged itinerary and updated context
+      // Update trip with multiple itineraries and updated context
       await tripsCollection.updateOne(
         { _id: new ObjectId(tripId) },
         {
           $set: {
             tripContext: finalizeOutput.updatedTripContext as Record<string, unknown>,
-            activeItinerary: mergedItinerary as Record<string, unknown>,
+            activeItinerary: multipleItineraries as Record<string, unknown>,
             updatedAt: new Date(),
           },
         }
@@ -347,7 +363,7 @@ export async function POST(req: NextRequest) {
         masterOutput: masterOutput as Record<string, unknown>,
         tasks: tasks as Record<string, unknown>[],
         specialistOutputs: specialistOutputs as Record<string, unknown>[],
-        mergedItinerary: mergedItinerary as Record<string, unknown>,
+        mergedItinerary: multipleItineraries as Record<string, unknown>,
         status: 'ok',
         createdAt: new Date(),
       });
@@ -359,13 +375,13 @@ export async function POST(req: NextRequest) {
           assistantMessage,
           masterMessageId: masterMessageResult.insertedId.toString(),
           tripContext: finalizeOutput.updatedTripContext,
-          itinerary: mergedItinerary,
+          multipleItineraries,
           run: {
             id: runResult.insertedId.toString(),
             masterOutput,
             tasks,
             specialistOutputs,
-            mergedItinerary,
+            multipleItineraries,
           },
         },
         { status: 200 }

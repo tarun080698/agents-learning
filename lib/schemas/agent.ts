@@ -95,6 +95,23 @@ export const mergedItinerarySchema = z.object({
   }).optional(),
 });
 
+// Itinerary option with metadata for selection
+export const itineraryOptionSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  description: z.string(),
+  highlights: z.array(z.string()),
+  estimatedTotalCost: z.string().optional(),
+  itinerary: mergedItinerarySchema,
+  tags: z.array(z.string()).optional(), // e.g., ["Budget-Friendly", "Adventure", "Relaxed"]
+});
+
+// Multiple itineraries response
+export const multipleItinerariesSchema = z.object({
+  options: z.array(itineraryOptionSchema).min(2).max(3),
+  comparisonNote: z.string().optional(),
+});
+
 // Master agent output schema - Step 3: supports CLARIFY, DISPATCH, FINALIZE
 export const masterOutputSchema = z.discriminatedUnion('mode', [
   z.object({
@@ -115,7 +132,7 @@ export const masterOutputSchema = z.discriminatedUnion('mode', [
   z.object({
     mode: z.literal('FINALIZE'),
     updatedTripContext: tripContextSchema,
-    mergedItinerary: mergedItinerarySchema,
+    multipleItineraries: multipleItinerariesSchema,
     questions: z.array(z.string()).max(0).default([]),
     shortSummary: z.string(),
     nextStep: z.string(),
@@ -127,4 +144,6 @@ export type TripContext = z.infer<typeof tripContextSchema>;
 export type Task = z.infer<typeof taskSchema>;
 export type SpecialistOutput = z.infer<typeof specialistOutputSchema>;
 export type MergedItinerary = z.infer<typeof mergedItinerarySchema>;
+export type ItineraryOption = z.infer<typeof itineraryOptionSchema>;
+export type MultipleItineraries = z.infer<typeof multipleItinerariesSchema>;
 export type MasterOutput = z.infer<typeof masterOutputSchema>;

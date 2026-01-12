@@ -5,10 +5,11 @@ import { UsernameGate } from '@/components/username-gate';
 import { TripsPanel } from '@/components/trips-panel';
 import { ChatPanel } from '@/components/chat-panel';
 import { TracePanel } from '@/components/trace-panel';
-import { ItineraryPanel } from '@/components/itinerary-panel';
 import { SavedItinerariesDrawer } from '@/components/saved-itineraries-drawer';
+import { ItinerarySelection } from '@/components/itinerary-selection';
 import { Button } from '@/components/ui/button';
-import type { MasterOutput, TripContext, Task, SpecialistOutput, MergedItinerary } from '@/lib/schemas/agent';
+import { Badge } from '@/components/ui/badge';
+import type { MasterOutput, TripContext, Task, SpecialistOutput, MergedItinerary, MultipleItineraries, ItineraryOption } from '@/lib/schemas/agent';
 
 interface Trip {
   _id: string;
@@ -39,12 +40,15 @@ export default function Home() {
   const [tripContext, setTripContext] = useState<TripContext | null>(null);
   const [masterOutput, setMasterOutput] = useState<MasterOutput | null>(null);
   const [mergedItinerary, setMergedItinerary] = useState<MergedItinerary | null>(null);
+  const [multipleItineraries, setMultipleItineraries] = useState<MultipleItineraries | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
   const [specialistOutputs, setSpecialistOutputs] = useState<SpecialistOutput[]>([]);
   const [runStatus, setRunStatus] = useState<'in-progress' | 'completed' | 'failed'>('in-progress');
   const [error, setError] = useState<string | null>(null);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [showItinerarySavedNotification, setShowItinerarySavedNotification] = useState(false);
+  const [savingItinerary, setSavingItinerary] = useState(false);
 
   useEffect(() => {
     // Check localStorage for existing session
@@ -156,22 +160,55 @@ export default function Home() {
     setSelectedTripId(tripId);
   };
 
-  const handleSendMessage = async (content: string) => {
+  const handleDeleteTrip = async (tripId: string) => {
+    try {
+      setLoading(true);
+      const response = await fetch(`/api/trips/${tripId}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) throw new Error('Failed to delete trip');
+
+      // Remove from local state
+      setTrips(trips.filter(t => t._id !== tripId));
+
+      // If the deleted trip was selected, clear selection
+      if (selectedTripId === tripId) {
+        setSelectedTripId(null);
+        setMessages([]);
+        setTripContext(null);
+        setMasterOutput(null);
+        setMergedItinerary(null);
+        setTasks([]);
+        setSpecialistOutputs([]);
+      }
+    } catch (error) {
+      console.error('Error deleting trip:', error);
+      alert('Failed to delete trip. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSendMessage = async (content: string, isRetry = false) => {
     if (!selectedTripId) return;
 
     // Clear any previous errors
     setError(null);
     setLastFailedMessage(null);
 
-    // Optimistically add user message to UI
-    const optimisticMessage: Message = {
-      _id: `temp-${Date.now()}`,
-      tripId: selectedTripId,
-      role: 'user',
-      content,
-      createdAt: new Date().toISOString(),
-    };
-    setMessages(prev => [...prev, optimisticMessage]);
+    // Only add optimistic message if this is NOT a retry (retry reuses existing message)
+    let optimisticMessage: Message | null = null;
+    if (!isRetry) {
+      optimisticMessage = {
+        _id: `temp-${Date.now()}`,
+        tripId: selectedTripId,
+        role: 'user',
+        content,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, optimisticMessage]);
+    }
 
     try {
       setLoading(true);
@@ -206,11 +243,15 @@ export default function Home() {
         if (data.run.specialistOutputs) {
           setSpecialistOutputs(data.run.specialistOutputs);
         }
-        if (data.run.mergedItinerary) {
+        if (data.run.multipleItineraries) {
+          // Multiple itineraries received - show selection UI
+          setMultipleItineraries(data.run.multipleItineraries);
+        } else if (data.run.mergedItinerary) {
+          // Backward compatibility for single itinerary
           setMergedItinerary(data.run.mergedItinerary);
         }
         // Determine run status
-        if (data.run.masterOutput?.mode === 'FINALIZE' && data.run.mergedItinerary) {
+        if (data.run.masterOutput?.mode === 'FINALIZE' && (data.run.multipleItineraries || data.run.mergedItinerary)) {
           setRunStatus('completed');
         } else {
           setRunStatus('in-progress');
@@ -227,8 +268,10 @@ export default function Home() {
       const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
       setError(errorMessage);
       setLastFailedMessage(content);
-      // Remove the optimistic message since it failed
-      setMessages(prev => prev.filter(m => m._id !== optimisticMessage._id));
+      // Remove the optimistic message since it failed (only if we created one)
+      if (optimisticMessage) {
+        setMessages(prev => prev.filter(m => m._id !== optimisticMessage._id));
+      }
     } finally {
       setLoading(false);
     }
@@ -236,14 +279,49 @@ export default function Home() {
 
   const handleRetry = () => {
     if (lastFailedMessage) {
-      handleSendMessage(lastFailedMessage);
+      handleSendMessage(lastFailedMessage, true);
     }
   };
 
-  const handleSelectSavedItinerary = (itinerary: MergedItinerary, tripContext?: TripContext | null) => {
-    setMergedItinerary(itinerary);
-    if (tripContext) {
-      setTripContext(tripContext);
+  const handleSelectItinerary = async (itinerary: MergedItinerary, option: ItineraryOption) => {
+    if (!selectedTripId) return;
+
+    setSavingItinerary(true);
+    try {
+      await saveItineraryAutomatically(itinerary, tripContext, option.title);
+      setMergedItinerary(itinerary);
+      setMultipleItineraries(null); // Hide selection UI
+    } catch (error) {
+      console.error('Error saving selected itinerary:', error);
+    } finally {
+      setSavingItinerary(false);
+    }
+  };
+
+  const saveItineraryAutomatically = async (
+    itinerary: MergedItinerary,
+    tripContext: TripContext | null,
+    customName?: string
+  ) => {
+    if (!selectedTripId) return;
+
+    try {
+      const response = await fetch(`/api/trips/${selectedTripId}/itineraries`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          itinerary,
+          tripContext,
+          name: customName || `${itinerary.summary.substring(0, 50)}${itinerary.summary.length > 50 ? '...' : ''}`,
+        }),
+      });
+
+      if (response.ok) {
+        setShowItinerarySavedNotification(true);
+        setTimeout(() => setShowItinerarySavedNotification(false), 5000);
+      }
+    } catch (error) {
+      console.error('Error auto-saving itinerary:', error);
     }
   };
 
@@ -270,14 +348,15 @@ export default function Home() {
           {/* Top row: Trips, Chat, Trace */}
           <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 min-h-0">
             {/* Trips panel */}
-            <divonViewSavedItineraries={() => setDrawerOpen(true)}
-                 className="lg:col-span-1 h-full min-h-0">
+            <div className="lg:col-span-1 h-full min-h-0">
               <TripsPanel
                 userId={userId}
                 trips={trips}
                 selectedTripId={selectedTripId}
                 onSelectTrip={handleSelectTrip}
                 onNewTrip={handleNewTrip}
+                onViewSavedItineraries={() => setDrawerOpen(true)}
+                onDeleteTrip={handleDeleteTrip}
                 loading={loading}
               />
             </div>
@@ -291,6 +370,9 @@ export default function Home() {
                 loading={loading}
                 error={error}
                 onRetry={handleRetry}
+                multipleItineraries={multipleItineraries}
+                onSelectItinerary={handleSelectItinerary}
+                savingItinerary={savingItinerary}
               />
             </div>
 
@@ -307,24 +389,26 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Bottom row: Itinerary (only shows when available) */}
-          {mergedItinerary && (
-            <div className="h-[50vh] min-h-0">
-              <ItineraryPanel
-                itinerary={mergedItinerary}
-                tripContext={tripContext}
-                tripId={selectedTripId}
-              />
-            </div>
-          )}
+          {/* Itinerary selection is now inline in the chat panel */}
         </div>
+
+        {/* Notification when itinerary is saved */}
+        {showItinerarySavedNotification && (
+          <div className="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-5">
+            <div className="bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
+              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+              </svg>
+              <span className="font-medium">Itinerary saved! Click the bookmark icon to view it.</span>
+            </div>
+          </div>
+        )}
 
         {/* Saved Itineraries Drawer */}
         <SavedItinerariesDrawer
           open={drawerOpen}
           onOpenChange={setDrawerOpen}
           tripId={selectedTripId}
-          onSelectItinerary={handleSelectSavedItinerary}
         />
       </div>
     </div>

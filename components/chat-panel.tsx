@@ -121,6 +121,21 @@ interface Message {
   createdAt: string;
 }
 
+interface MultipleItineraries {
+  options: ItineraryOption[];
+  comparisonNote?: string;
+}
+
+interface ItineraryOption {
+  id: string;
+  title: string;
+  description: string;
+  highlights: string[];
+  estimatedTotalCost?: string;
+  tags: string[];
+  itinerary: any;
+}
+
 interface ChatPanelProps {
   tripId: string | null;
   messages: Message[];
@@ -128,9 +143,22 @@ interface ChatPanelProps {
   loading: boolean;
   error: string | null;
   onRetry: () => void;
+  multipleItineraries?: MultipleItineraries | null;
+  onSelectItinerary?: (itinerary: any, option: ItineraryOption) => void;
+  savingItinerary?: boolean;
 }
 
-export function ChatPanel({ tripId, messages, onSendMessage, loading, error, onRetry }: ChatPanelProps) {
+export function ChatPanel({
+  tripId,
+  messages,
+  onSendMessage,
+  loading,
+  error,
+  onRetry,
+  multipleItineraries,
+  onSelectItinerary,
+  savingItinerary
+}: ChatPanelProps) {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -165,9 +193,98 @@ export function ChatPanel({ tripId, messages, onSendMessage, loading, error, onR
     e.target.style.height = Math.min(e.target.scrollHeight, 150) + 'px';
   };
 
+// Itinerary option card component
+function ItineraryOptionCard({
+  option,
+  onSelect,
+  loading
+}: {
+  option: any;
+  onSelect: (itinerary: any, option: any) => void;
+  loading?: boolean;
+}) {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <Card className="border-2 hover:border-blue-300 transition-all">
+      <CardHeader className="pb-3">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex-1">
+            <CardTitle className="text-lg">{option.title}</CardTitle>
+            <CardDescription className="mt-1">{option.description}</CardDescription>
+          </div>
+          <Button
+            onClick={() => onSelect(option.itinerary, option)}
+            disabled={loading}
+            size="sm"
+            className="shrink-0"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              'Select'
+            )}
+          </Button>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-3 pt-0">
+        {/* Cost */}
+        {option.estimatedTotalCost && (
+          <div className="text-sm">
+            <span className="font-medium">💰 Estimated Cost: </span>
+            <span className="text-green-600">{option.estimatedTotalCost}</span>
+          </div>
+        )}
+
+        {/* Days count */}
+        {option.itinerary?.days && (
+          <div className="text-sm">
+            <span className="font-medium">📅 Duration: </span>
+            <span>{option.itinerary.days.length} days</span>
+          </div>
+        )}
+
+        {/* Tags */}
+        {option.tags && option.tags.length > 0 && (
+          <div className="flex flex-wrap gap-2">
+            {option.tags.map((tag: string, i: number) => (
+              <Badge key={i} variant="secondary" className="text-xs">
+                {tag}
+              </Badge>
+            ))}
+          </div>
+        )}
+
+        {/* Highlights */}
+        {option.highlights && option.highlights.length > 0 && (
+          <div className="space-y-1">
+            <button
+              onClick={() => setExpanded(!expanded)}
+              className="text-sm font-medium text-blue-600 hover:text-blue-800 flex items-center gap-1"
+            >
+              ✨ {expanded ? 'Hide' : 'View'} Highlights
+              <span className="text-xs">{expanded ? '▲' : '▼'}</span>
+            </button>
+            {expanded && (
+              <ul className="text-sm text-slate-600 space-y-1 ml-4 mt-2">
+                {option.highlights.map((highlight: string, i: number) => (
+                  <li key={i} className="list-disc">{highlight}</li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
   return (
     <Card className="h-full flex flex-col overflow-hidden">
-      <CardHeader className="flex-shrink-0">
+      <CardHeader className="shrink-0">
         <CardTitle>Chat</CardTitle>
         <CardDescription>
           {tripId ? 'Discuss your travel plans' : 'Select a trip to start chatting'}
@@ -242,13 +359,38 @@ export function ChatPanel({ tripId, messages, onSendMessage, loading, error, onR
                   </Button>
                 </div>
               )}
-              <div ref={scrollRef} />
+              {/* Inline Itinerary Selection */}
+              {multipleItineraries && onSelectItinerary && (
+                <div className="mt-6">
+                  <Separator className="my-4" />
+                  <div className="space-y-4">
+                    <div className="text-center py-4">
+                      <h3 className="text-xl font-semibold text-slate-800">🎉 Choose Your Perfect Itinerary</h3>
+                      <p className="text-sm text-slate-600 mt-2">
+                        {multipleItineraries.comparisonNote || 'Select the option that best fits your travel style'}
+                      </p>
+                    </div>
+
+                    <div className="space-y-4">
+                      {multipleItineraries.options.map((option) => (
+                        <ItineraryOptionCard
+                          key={option.id}
+                          option={option}
+                          onSelect={onSelectItinerary}
+                          loading={savingItinerary}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+                            <div ref={scrollRef} />
             </div>
           )}
         </div>
 
         {tripId && (
-          <div className="flex gap-2 flex-shrink-0">
+          <div className="flex gap-2 shrink-0">
             <textarea
               ref={textareaRef}
               placeholder="Type your message... (Enter to send, Ctrl+Enter for new line)"
