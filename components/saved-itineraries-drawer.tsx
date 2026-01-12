@@ -14,8 +14,9 @@ import {
   DrawerDescription,
   DrawerBody,
 } from '@/components/ui/drawer';
-import { Trash2, Calendar, Eye } from 'lucide-react';
+import { Trash2, Calendar, Eye, Download, Copy, FileText } from 'lucide-react';
 import type { MergedItinerary, TripContext } from '@/lib/schemas/agent';
+import { downloadItineraryAsFile, copyItineraryToClipboard } from '@/lib/utils/itineraryExport';
 
 interface SavedItinerary {
   _id: string;
@@ -112,14 +113,59 @@ export function SavedItinerariesDrawer({
           ) : selectedItinerary ? (
             // Detail view
             <div className="space-y-4">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setSelectedItinerary(null)}
-                className="mb-2"
-              >
-                ← Back to list
-              </Button>
+              <div className="flex items-center justify-between mb-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedItinerary(null)}
+                >
+                  ← Back to list
+                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      const success = await copyItineraryToClipboard(
+                        selectedItinerary.itinerary,
+                        selectedItinerary.name || 'Trip Itinerary'
+                      );
+                      if (success) {
+                        alert('Itinerary copied to clipboard!');
+                      } else {
+                        alert('Failed to copy itinerary');
+                      }
+                    }}
+                    title="Copy to clipboard"
+                  >
+                    <Copy className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => downloadItineraryAsFile(
+                      selectedItinerary.itinerary,
+                      selectedItinerary.name || 'Trip Itinerary',
+                      'txt'
+                    )}
+                    title="Download as text file"
+                  >
+                    <FileText className="w-4 h-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => downloadItineraryAsFile(
+                      selectedItinerary.itinerary,
+                      selectedItinerary.name || 'Trip Itinerary',
+                      'md'
+                    )}
+                    title="Download as markdown"
+                  >
+                    <Download className="w-4 h-4" />
+                  </Button>
+                </div>
+              </div>
 
               <Card>
                 <CardHeader>
@@ -285,7 +331,8 @@ function ItineraryDetails({ itinerary }: { itinerary: MergedItinerary }) {
                                 {meal.type}
                               </span>
                               <div className="text-orange-800 ml-1">
-                                {renderObject(meal.recommendation)}
+                                {meal.suggestion}
+                                {meal.estimatedCost && <span className="text-xs ml-2">({meal.estimatedCost})</span>}
                               </div>
                             </div>
                           ))}
@@ -304,14 +351,12 @@ function ItineraryDetails({ itinerary }: { itinerary: MergedItinerary }) {
                         <h4 className="font-semibold text-blue-900 mb-2">Activities</h4>
                         <div className="space-y-2">
                           {day.activities.map((activity, idx) => (
-                            <div key={idx} className="flex items-start gap-2 text-sm">
-                              <span className="font-semibold text-blue-700 min-w-[60px]">{activity.time}</span>
-                              <div className="flex-1">
-                                <p className="text-blue-900">{activity.description}</p>
-                                {activity.location && (
-                                  <p className="text-blue-600 text-xs mt-0.5">📍 {activity.location}</p>
-                                )}
-                              </div>
+                            <div key={idx} className="flex flex-col gap-1 text-sm bg-blue-50 p-2 rounded">
+                              <div className="font-semibold text-blue-900">{activity.name}</div>
+                              {activity.time && <div className="text-blue-700 text-xs">⏰ {activity.time}</div>}
+                              {activity.duration && <div className="text-blue-700 text-xs">⏱️ {activity.duration}</div>}
+                              {activity.description && <p className="text-blue-900 mt-1">{activity.description}</p>}
+                              {activity.estimatedCost && <div className="text-blue-700 text-xs">💰 {activity.estimatedCost}</div>}
                             </div>
                           ))}
                         </div>

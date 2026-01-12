@@ -132,6 +132,7 @@ interface ChatPanelProps {
   multipleItineraries?: MultipleItineraries | null;
   onSelectItinerary?: (itinerary: any, option: ItineraryOption) => void;
   savingItinerary?: boolean;
+  lastFailedMessage?: string | null;
 }
 
 export function ChatPanel({
@@ -143,7 +144,8 @@ export function ChatPanel({
   onRetry,
   multipleItineraries,
   onSelectItinerary,
-  savingItinerary
+  savingItinerary,
+  lastFailedMessage
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -334,6 +336,12 @@ function ItineraryOptionCard({
                     <span className="text-red-600 font-semibold text-sm">Error:</span>
                     <span className="text-red-700 text-sm flex-1">{error}</span>
                   </div>
+                  {lastFailedMessage && (
+                    <div className="text-sm text-red-600 bg-red-100 p-2 rounded border border-red-200">
+                      <span className="font-medium">Will retry:</span>
+                      <div className="mt-1 text-red-800 italic">"{lastFailedMessage}"</div>
+                    </div>
+                  )}
                   <Button
                     onClick={onRetry}
                     disabled={loading}

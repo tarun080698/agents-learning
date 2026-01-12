@@ -17,7 +17,7 @@ const MOCK_MODE = process.env.MOCK_OPENAI === 'true';
  */
 function normalizeDatesInOutput(output: MasterOutput): MasterOutput {
   // Only normalize dates for modes that have updatedTripContext
-  if (output.mode === 'CLARIFY' || output.mode === 'DISPATCH') {
+  if (output.mode === 'CLARIFY' || output.mode === 'CONFIRM' || output.mode === 'DISPATCH') {
     const startDate = output.updatedTripContext.trip.dateRange.start;
     const endDate = output.updatedTripContext.trip.dateRange.end;
 
@@ -138,11 +138,18 @@ ${outstandingQuestions.length > 0 ? outstandingQuestions.map(q => `- "${q.text}"
 
 MODE DECISION:
 - Use "CLARIFY" mode if you need to ask questions to gather comprehensive trip details (aim for 10-15 questions total before dispatching)
-- Use "DISPATCH" mode ONLY when you have gathered sufficient detail:
-  * Must have: origin, destination, start date, end date, travelers, budget level, pace, hotel style, dietary, interests/must-do
-  * Should have: specific interests, cuisine preferences, activity types, accommodation location preferences
+- Use "CONFIRM" mode when you have gathered sufficient detail and want user to review the context summary:
+  * Must have: origin, destination, start date, end date, travelers, budget level, pace
+  * Should have: interests, hotel style, dietary restrictions, must-do activities
   * Transport preference is optional (can be assumed)
-- If you have comprehensive information, output mode="DISPATCH" with tasks array
+  * Present a human-readable summary asking "Does this look good?" or "Ready to create your itinerary options?"
+- Use "DISPATCH" mode when:
+  * User explicitly confirms (says "yes", "looks good", "proceed", "ready", "correct", "confirmed", etc.)
+  * User asks if it's enough/sufficient ("is this enough?", "can you proceed?", etc.) → Treat as implicit confirmation and proceed to DISPATCH
+  * User makes small corrections and confirms
+- If user in CONFIRM mode:
+  * Asks questions, expresses uncertainty, or says "you tell me" → Provide brief guidance then offer to proceed. If they still seem uncertain, ask 1-2 clarifying questions about missing optional details (hotel style, dietary, must-dos), then proceed to DISPATCH
+  * Points out errors or major gaps → Return to CLARIFY mode to gather correct information
 
 DATE HANDLING (CRITICAL):
 - When user provides dates without years (e.g., "16th Jan"), calculate next occurrence
@@ -152,7 +159,7 @@ DATE HANDLING (CRITICAL):
 - End date must be after start date
 
 TRIP CONTEXT STRUCTURE (CRITICAL - MUST FOLLOW EXACTLY):
-updatedTripContext MUST have this exact nested structure:
+updatedTripContext MUST have this exact nested structure FOR ALL MODES (CLARIFY, CONFIRM, DISPATCH, FINALIZE):
 {
   "trip": {
     "origin": "City name or null",
@@ -179,6 +186,8 @@ updatedTripContext MUST have this exact nested structure:
   "openQuestions": ["question1", "question2"],
   "assumptions": ["assumption1", "assumption2"]
 }
+
+CRITICAL: openQuestions and assumptions MUST be arrays inside updatedTripContext, not at root level!
 
 CLARIFY MODE OUTPUT EXAMPLE:
 {
@@ -247,7 +256,50 @@ DISPATCH MODE OUTPUT:
   "questions": [],
   "shortSummary": "We have all the information needed. Creating detailed itinerary...",
   "nextStep": "Dispatching to specialist agents for transport, accommodation, and dining recommendations"
-}`;
+}
+
+CONFIRM MODE OUTPUT (WHEN READY FOR USER CONFIRMATION):
+{
+  "mode": "CONFIRM",
+  "updatedTripContext": {
+    "trip": {
+      "origin": "New York City",
+      "destinations": ["San Francisco"],
+      "dateRange": { "start": "2026-01-16", "end": "2026-01-20" },
+      "travelers": 3,
+      "budget": { "level": "high", "currency": "USD" },
+      "preferences": {
+        "pace": "moderate",
+        "interests": ["hiking", "biking", "landmarks"],
+        "dietary": ["vegan"],
+        "hotelStyle": "boutique",
+        "transportPreference": null
+      },
+      "constraints": {
+        "mustDo": ["Golden Gate Bridge", "Alcatraz"],
+        "avoid": ["tourist traps"]
+      }
+    },
+    "decisions": {
+      "confirmed": ["NYC to SF", "3 travelers", "High budget", "Vegan", "Peanut allergy"],
+      "pending": []
+    },
+    "openQuestions": [],
+    "assumptions": ["Assumed boutique hotels based on budget level"]
+  },
+  "contextSummary": "# Your Trip to San Francisco\\n\\n📍 **Trip Overview**\\n- From: New York City\\n- To: San Francisco\\n- Dates: January 16-20, 2026 (5 days, 4 nights)\\n- Travelers: 3 people\\n\\n💰 **Budget & Travel Style**\\n- Budget: High-end / Luxury\\n- Pace: Moderate (balanced)\\n- Accommodation: Boutique hotels\\n\\n🎯 **Your Interests**\\n- Hiking and outdoor activities\\n- Biking\\n- Famous landmarks\\n\\n🍽️ **Dining**\\n- Vegan fine dining preferred\\n- ⚠️ Peanut allergy (will confirm with all restaurants)\\n\\n✅ **Must-Do Experiences**\\n- Golden Gate Bridge\\n- Alcatraz tour\\n\\n❌ **Things to Avoid**\\n- Crowded tourist traps\\n\\n---\\n\\n**Does this look good? Ready to create your itinerary options?**",
+  "questions": ["Confirm if this summary is accurate and we should proceed"],
+  "shortSummary": "Context gathered. Awaiting your confirmation to create itinerary options.",
+  "nextStep": "User reviews context summary and confirms to proceed to dispatch"
+}
+
+HANDLING USER RESPONSES IN CONFIRM MODE:
+1. Clear confirmation (e.g., "yes", "looks good", "proceed", "ready", "that's correct") → DISPATCH mode immediately
+2. Implicit confirmation / asking if sufficient (e.g., "is this enough?", "can you proceed?", "you tell me") → DISPATCH mode with encouraging note
+3. Questions or uncertainty (e.g., "what else do you need?", "should I add more?") → Either DISPATCH with brief guidance OR ask 1-2 quick optional questions then DISPATCH
+4. Pointing out errors (e.g., "no, I said 3 travelers not 2") → CLARIFY mode to fix the issue
+
+IMPORTANT: Don't get stuck repeating the same CONFIRM message. If user seems uncertain but info is sufficient, proceed to DISPATCH.`;
 
   // If specialist outputs provided, add FINALIZE mode prompt
   if (specialistOutputs && specialistOutputs.length > 0) {
@@ -298,10 +350,10 @@ CRITICAL: You MUST create 2-3 different itinerary options for the user to choose
               "transport": { "provider": "Amtrak", "route": "Jersey City to DC", "estimatedCost": "$50" },
               "accommodation": { "name": "The Darcy Hotel", "area": "Downtown", "estimatedCost": "$200/night" },
               "meals": [
-                { "type": "dinner", "recommendation": { "name": "Fancy Radish", "cuisine": "Vegetarian", "estimatedCost": "$60" } }
+                { "type": "dinner", "suggestion": "Fancy Radish (Vegetarian fine dining) - Try their seasonal vegetable tasting menu. Located at 600 Florida Ave NW. Reservations recommended. $50-70 per person.", "estimatedCost": "$60" }
               ],
               "activities": [
-                { "time": "Evening", "description": "Walk the National Mall", "location": "National Mall" }
+                { "name": "Evening stroll at National Mall", "time": "7:00 PM", "duration": "1 hour", "description": "Enjoy the monuments lit up at night, including Lincoln Memorial and Washington Monument" }
               ]
             }
           ],
@@ -358,7 +410,22 @@ CRITICAL RULES FOR FINALIZE MODE:
 3. Each option should have a clear theme and target audience
 4. Provide specific highlights and estimated costs for each
 5. Use tags to help users quickly understand each option
-6. You MUST output mode="FINALIZE" when specialist outputs are present. Do not use DISPATCH or CLARIFY.`;
+6. You MUST output mode="FINALIZE" when specialist outputs are present. Do not use DISPATCH or CLARIFY.
+
+CRITICAL FORMATTING RULES FOR ITINERARY DAYS:
+- meals[].suggestion MUST be a STRING, not an object. Format as: "Restaurant Name (cuisine/details) - Description. Address. $XX-YY per person."
+- meals[].type MUST be one of: "breakfast", "lunch", "dinner", "snack"
+- meals[].estimatedCost is optional string
+- activities[].name MUST be present (required string)
+- activities[].time, duration, description, estimatedCost are optional strings
+- DO NOT use "recommendation" field - use "suggestion" for meals
+- DO NOT use "location" field in activities - include location info in description
+
+CRITICAL LOCATION VERIFICATION:
+- VERIFY all restaurant and activity addresses are in the DESTINATION CITY from the trip context
+- Do NOT include places from other cities (e.g., DC restaurants in a Boston trip)
+- Check that neighborhoods, street names, and zip codes match the destination city
+- When merging specialist outputs, validate each address belongs to the destination`;
   }
 
   return basePrompt;

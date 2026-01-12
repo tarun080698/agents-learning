@@ -46,6 +46,7 @@ export interface Run {
   tasks?: Record<string, unknown>[];
   specialistOutputs?: Record<string, unknown>[];
   mergedItinerary?: Record<string, unknown>;
+  multipleItineraries?: Record<string, unknown>;
   status: string;
   error?: string;
   createdAt: Date;

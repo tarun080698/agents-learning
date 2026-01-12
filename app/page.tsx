@@ -137,6 +137,43 @@ export default function Home() {
     }
   };
 
+  const loadLatestRun = async (tripId: string) => {
+    try {
+      const response = await fetch(`/api/trips/${tripId}/latest-run`);
+      if (!response.ok) return;
+
+      const data = await response.json();
+      if (data.run) {
+        // Restore run state
+        if (data.run.masterOutput) {
+          setMasterOutput(data.run.masterOutput);
+        }
+        if (data.run.tasks) {
+          setTasks(data.run.tasks);
+        }
+        if (data.run.specialistOutputs) {
+          setSpecialistOutputs(data.run.specialistOutputs);
+        }
+        if (data.run.multipleItineraries) {
+          setMultipleItineraries(data.run.multipleItineraries);
+        } else if (data.run.mergedItinerary) {
+          setMergedItinerary(data.run.mergedItinerary);
+        }
+
+        // Set run status
+        if (data.run.status === 'error') {
+          setRunStatus('failed');
+        } else if (data.run.masterOutput?.mode === 'FINALIZE') {
+          setRunStatus('completed');
+        } else {
+          setRunStatus('in-progress');
+        }
+      }
+    } catch (error) {
+      console.error('Error loading latest run:', error);
+    }
+  };
+
   const handleNewTrip = async () => {
     try {
       setLoading(true);
@@ -158,9 +195,22 @@ export default function Home() {
 
   const handleSelectTrip = (tripId: string) => {
     setSelectedTripId(tripId);
+    // Reset error state when switching trips
+    setError(null);
+    setLastFailedMessage(null);
   };
 
   const handleDeleteTrip = async (tripId: string) => {
+    // Get trip details for better confirmation
+    const trip = trips.find(t => t._id === tripId);
+    const messageCount = tripId === selectedTripId ? messages.length : 0;
+
+    const confirmMessage = trip && messageCount > 0
+      ? `Delete this trip with ${messageCount} messages? This cannot be undone.`
+      : 'Delete this trip? This cannot be undone.';
+
+    if (!confirm(confirmMessage)) return;
+
     try {
       setLoading(true);
       const response = await fetch(`/api/trips/${tripId}`, {
@@ -269,8 +319,13 @@ export default function Home() {
       setError(errorMessage);
       setLastFailedMessage(content);
       // Remove the optimistic message since it failed (only if we created one)
-      if (optimisticMessage) {
-        setMessages(prev => prev.filter(m => m._id !== optimisticMessage._id));
+      if (optimisticMessage?._id) {
+        setMessages(prev => prev.filter(m => m._id !== optimisticMessage!._id));
+      } else if (isRetry) {
+        // For retry, just reload messages to get clean state
+        if (selectedTripId) {
+          await loadMessages(selectedTripId);
+        }
       }
     } finally {
       setLoading(false);
@@ -291,8 +346,20 @@ export default function Home() {
       await saveItineraryAutomatically(itinerary, tripContext, option.title);
       setMergedItinerary(itinerary);
       setMultipleItineraries(null); // Hide selection UI
+
+      // Show confirmation message
+      const confirmationMessage = {
+        _id: `system-${Date.now()}`,
+        tripId: selectedTripId,
+        role: 'assistant',
+        agentName: 'System',
+        content: `✅ **${option.title}** has been saved! You can view the full itinerary details anytime by clicking the bookmark icon.`,
+        createdAt: new Date().toISOString(),
+      };
+      setMessages(prev => [...prev, confirmationMessage]);
     } catch (error) {
       console.error('Error saving selected itinerary:', error);
+      setError('Failed to save itinerary. Please try again.');
     } finally {
       setSavingItinerary(false);
     }
@@ -373,6 +440,7 @@ export default function Home() {
                 multipleItineraries={multipleItineraries}
                 onSelectItinerary={handleSelectItinerary}
                 savingItinerary={savingItinerary}
+                lastFailedMessage={lastFailedMessage}
               />
             </div>
 

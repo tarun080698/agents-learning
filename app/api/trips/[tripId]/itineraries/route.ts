@@ -51,7 +51,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
   }
 }
 
-// Get all saved itineraries for a trip
+// Get all saved itineraries for a trip (limited to 20 most recent)
 export async function GET(req: NextRequest, context: RouteContext) {
   try {
     await initIndexes();
@@ -66,7 +66,10 @@ export async function GET(req: NextRequest, context: RouteContext) {
       return NextResponse.json({ error: 'Trip not found' }, { status: 404 });
     }
 
-    return NextResponse.json(trip.savedItineraries || [], { status: 200 });
+    // Return only the 20 most recent itineraries to prevent overload
+    const itineraries = (trip.savedItineraries || []).slice(-20).reverse();
+
+    return NextResponse.json(itineraries, { status: 200 });
   } catch (error: unknown) {
     console.error('Error fetching itineraries:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

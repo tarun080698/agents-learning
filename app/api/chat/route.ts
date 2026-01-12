@@ -50,12 +50,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
-    // Load recent messages
+    // Load recent messages (increased from 20 to 50 for better context)
     const messagesCollection = await getMessagesCollection();
     const recentMessages = await messagesCollection
       .find({ tripId: new ObjectId(tripId) })
       .sort({ createdAt: 1 })
-      .limit(20)
+      .limit(50)
       .toArray();
 
     // Check if this exact message was already saved recently (within last 10 seconds)
@@ -95,6 +95,38 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // Check if itineraries have already been generated for this trip
+    const runsCollection = await getRunsCollection();
+    const existingRun = await runsCollection.findOne(
+      { tripId: new ObjectId(tripId), multipleItineraries: { $exists: true, $ne: null } },
+      { sort: { createdAt: -1 } }
+    );
+
+    // If itineraries already exist and user hasn't selected one yet, guide them to use the UI
+    if (existingRun?.multipleItineraries) {
+      // Check if message indicates confusion or asking for next steps
+      const selectionKeywords = /select|choose|pick|next|looks good|already selected|what now|proceed/i;
+
+      if (selectionKeywords.test(message)) {
+        // Save a helpful assistant message
+        const assistantMessage = {
+          tripId: new ObjectId(tripId),
+          role: 'system' as const,
+          agentName: 'Master',
+          content: '👆 Please select one of the itinerary options above by clicking the "Select" button on your preferred choice. This will save the itinerary and let you view the detailed day-by-day plan.',
+          createdAt: new Date(),
+        };
+
+        await messagesCollection.insertOne(assistantMessage);
+
+        // Return existing run data
+        return NextResponse.json({
+          run: existingRun,
+          tripContext: currentTripContext,
+        });
+      }
+    }
+
     // Mark any questions as answered if user provided info
     if (currentTripContext) {
       currentTripContext = markQuestionsAsAnswered(currentTripContext, message);
@@ -113,8 +145,6 @@ export async function POST(req: NextRequest) {
       answeredQuestions: answered,
       outstandingQuestions: outstanding,
     });
-
-    const runsCollection = await getRunsCollection();
 
     if (!agentResult.success || !agentResult.output) {
       // Log detailed error for debugging
@@ -196,6 +226,56 @@ export async function POST(req: NextRequest) {
           run: {
             id: runResult.insertedId.toString(),
             masterOutput: filteredOutput,
+          },
+        },
+        { status: 200 }
+      );
+    } else if (masterOutput.mode === 'CONFIRM') {
+      // Mode: CONFIRM - Show context summary and wait for user confirmation
+
+      // Format master response with context summary
+      const assistantMessage = `${masterOutput.contextSummary}\n\n${masterOutput.questions.join('\n')}`;
+
+      // Save master message
+      const masterMessageResult = await messagesCollection.insertOne({
+        tripId: new ObjectId(tripId),
+        role: 'master',
+        agentName: 'Master',
+        content: assistantMessage,
+        parsed: masterOutput as Record<string, unknown>,
+        createdAt: new Date(),
+      });
+
+      // Update trip context
+      await tripsCollection.updateOne(
+        { _id: new ObjectId(tripId) },
+        {
+          $set: {
+            tripContext: masterOutput.updatedTripContext as Record<string, unknown>,
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      // Create run record (CONFIRM mode)
+      const runResult = await runsCollection.insertOne({
+        tripId: new ObjectId(tripId),
+        userMessageId,
+        masterOutput: masterOutput as Record<string, unknown>,
+        status: 'awaiting_confirmation',
+        createdAt: new Date(),
+      });
+
+      return NextResponse.json(
+        {
+          success: true,
+          tripId,
+          assistantMessage,
+          masterMessageId: masterMessageResult.insertedId.toString(),
+          tripContext: masterOutput.updatedTripContext,
+          run: {
+            id: runResult.insertedId.toString(),
+            masterOutput,
           },
         },
         { status: 200 }

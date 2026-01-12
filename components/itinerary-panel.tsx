@@ -191,7 +191,7 @@ export function ItineraryPanel({ itinerary, tripContext, tripId, onSaved }: Itin
                           {day.meals.map((meal, mealIdx) => (
                             <div key={mealIdx} className="text-sm bg-slate-50 rounded p-2">
                               <Badge variant="outline" className="mb-1 text-xs">{meal.type}</Badge>
-                              <div className="mt-1">{renderObject(meal.recommendation)}</div>
+                              <div className="mt-1">{meal.suggestion || renderObject(meal)}</div>
                             </div>
                           ))}
                         </div>
@@ -205,10 +205,11 @@ export function ItineraryPanel({ itinerary, tripContext, tripId, onSaved }: Itin
                         <ul className="space-y-1 text-sm">
                           {day.activities.map((activity, actIdx) => (
                             <li key={actIdx} className="bg-slate-50 rounded p-2">
-                              <span className="font-medium">{activity.time}:</span> {activity.description}
-                              {activity.location && (
-                                <span className="text-slate-600"> • {activity.location}</span>
-                              )}
+                              <div className="font-medium">{activity.name}</div>
+                              {activity.time && <div className="text-xs text-slate-600">Time: {activity.time}</div>}
+                              {activity.duration && <div className="text-xs text-slate-600">Duration: {activity.duration}</div>}
+                              {activity.description && <div className="mt-1 text-sm">{activity.description}</div>}
+                              {activity.estimatedCost && <div className="text-xs text-slate-600 mt-1">Cost: {activity.estimatedCost}</div>}
                             </li>
                           ))}
                         </ul>
@@ -349,7 +350,8 @@ function generateMarkdownItinerary(itinerary: MergedItinerary): string {
     if (day.meals && day.meals.length > 0) {
       md += `**Meals:**\n`;
       day.meals.forEach(meal => {
-        md += `- ${meal.type}: ${JSON.stringify(meal.recommendation)}\n`;
+        md += `- ${meal.type}: ${meal.suggestion}\n`;
+        if (meal.estimatedCost) md += `  Cost: ${meal.estimatedCost}\n`;
       });
       md += '\n';
     }
@@ -357,9 +359,12 @@ function generateMarkdownItinerary(itinerary: MergedItinerary): string {
     if (day.activities && day.activities.length > 0) {
       md += `**Activities:**\n`;
       day.activities.forEach(activity => {
-        md += `- ${activity.time}: ${activity.description}`;
-        if (activity.location) md += ` (${activity.location})`;
+        md += `- ${activity.name}`;
+        if (activity.time) md += ` (${activity.time})`;
+        if (activity.duration) md += ` - ${activity.duration}`;
         md += '\n';
+        if (activity.description) md += `  ${activity.description}\n`;
+        if (activity.estimatedCost) md += `  Cost: ${activity.estimatedCost}\n`;
       });
       md += '\n';
     }

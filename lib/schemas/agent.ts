@@ -80,12 +80,15 @@ export const mergedItinerarySchema = z.object({
     }).optional(),
     meals: z.array(z.object({
       type: z.enum(['breakfast', 'lunch', 'dinner', 'snack']),
-      recommendation: z.any(),
+      suggestion: z.string(),
+      estimatedCost: z.string().optional(),
     })).optional(),
     activities: z.array(z.object({
-      time: z.string(),
-      description: z.string(),
-      location: z.string().optional(),
+      name: z.string(),
+      time: z.string().optional(),
+      duration: z.string().optional(),
+      description: z.string().optional(),
+      estimatedCost: z.string().optional(),
     })).optional(),
   })),
   alternativeOptions: z.object({
@@ -112,12 +115,20 @@ export const multipleItinerariesSchema = z.object({
   comparisonNote: z.string().optional(),
 });
 
-// Master agent output schema - Step 3: supports CLARIFY, DISPATCH, FINALIZE
+// Master agent output schema - Step 3: supports CLARIFY, CONFIRM, DISPATCH, FINALIZE
 export const masterOutputSchema = z.discriminatedUnion('mode', [
   z.object({
     mode: z.literal('CLARIFY'),
     updatedTripContext: tripContextSchema,
     questions: z.array(z.string()).min(1).max(7),
+    shortSummary: z.string(),
+    nextStep: z.string(),
+  }),
+  z.object({
+    mode: z.literal('CONFIRM'),
+    updatedTripContext: tripContextSchema,
+    contextSummary: z.string(),
+    questions: z.array(z.string()).max(1).default([]),
     shortSummary: z.string(),
     nextStep: z.string(),
   }),
