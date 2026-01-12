@@ -60,6 +60,7 @@ export async function POST(req: NextRequest) {
 
     // Check if this exact message was already saved recently (within last 10 seconds)
     // This prevents duplicates on retry
+    const now = new Date();
     const tenSecondsAgo = new Date(Date.now() - 10000);
     const existingMessage = await messagesCollection.findOne({
       tripId: new ObjectId(tripId),
@@ -74,7 +75,6 @@ export async function POST(req: NextRequest) {
       userMessageId = existingMessage._id;
     } else {
       // Append new user message
-      const now = new Date();
       const userMessage = {
         tripId: new ObjectId(tripId),
         role: 'user' as const,
