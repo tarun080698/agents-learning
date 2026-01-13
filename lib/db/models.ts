@@ -43,6 +43,7 @@ export interface Run {
   tripId: ObjectId;
   userMessageId: ObjectId;
   masterOutput?: Record<string, unknown>;
+  dispatchOutput?: Record<string, unknown>;
   tasks?: Record<string, unknown>[];
   specialistOutputs?: Record<string, unknown>[];
   mergedItinerary?: Record<string, unknown>;

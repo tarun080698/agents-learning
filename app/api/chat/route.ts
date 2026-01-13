@@ -436,14 +436,15 @@ export async function POST(req: NextRequest) {
         }
       );
 
-      // Create complete run record
+      // Create complete run record with both dispatch and finalize outputs
       const runResult = await runsCollection.insertOne({
         tripId: new ObjectId(tripId),
         userMessageId,
-        masterOutput: masterOutput as Record<string, unknown>,
+        masterOutput: finalizeOutput as Record<string, unknown>,
+        dispatchOutput: masterOutput as Record<string, unknown>,
         tasks: tasks as Record<string, unknown>[],
         specialistOutputs: specialistOutputs as Record<string, unknown>[],
-        mergedItinerary: multipleItineraries as Record<string, unknown>,
+        multipleItineraries: multipleItineraries as Record<string, unknown>,
         status: 'ok',
         createdAt: new Date(),
       });

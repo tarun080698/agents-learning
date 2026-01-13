@@ -28,13 +28,16 @@ export function TracePanel({
 }: TracePanelProps) {
   return (
     <Card className="h-full flex flex-col overflow-hidden">
-      <CardHeader className="shrink-0">
-        <div className="flex justify-between items-start">
-          <div>
-            <CardTitle>Execution Trace</CardTitle>
-            <CardDescription>Agent orchestration and decision flow</CardDescription>
+      <CardHeader className="shrink-0 p-4 md:p-6">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-lg md:text-xl">Execution Trace</CardTitle>
+            <CardDescription className="text-sm">Agent orchestration and decision flow</CardDescription>
           </div>
-          <Badge variant={runStatus === 'completed' ? 'default' : runStatus === 'failed' ? 'destructive' : 'secondary'}>
+          <Badge
+            variant={runStatus === 'completed' ? 'default' : runStatus === 'failed' ? 'destructive' : 'secondary'}
+            className="self-start md:self-auto"
+          >
             {runStatus === 'in-progress' && <Clock className="w-3 h-3 mr-1" />}
             {runStatus === 'completed' && <CheckCircle2 className="w-3 h-3 mr-1" />}
             {runStatus === 'failed' && <AlertCircle className="w-3 h-3 mr-1" />}
@@ -42,12 +45,12 @@ export function TracePanel({
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 overflow-hidden">
+      <CardContent className="flex-1 overflow-hidden p-4 md:p-6">
         <Tabs defaultValue="context" className="h-full flex flex-col">
-          <TabsList className="shrink-0 grid w-full grid-cols-5">
-            <TabsTrigger value="context">Context</TabsTrigger>
-            <TabsTrigger value="tasks">Tasks</TabsTrigger>
-            <TabsTrigger value="specialists">Specialists</TabsTrigger>
+          <TabsList className="shrink-0 grid w-full grid-cols-5 text-xs md:text-sm h-auto md:h-10">
+            <TabsTrigger value="context" className="py-2 px-1 md:px-3">Context</TabsTrigger>
+            <TabsTrigger value="tasks" className="py-2 px-1 md:px-3">Tasks</TabsTrigger>
+            <TabsTrigger value="specialists" className="py-2 px-1 md:px-3">Specialists</TabsTrigger>
             <TabsTrigger value="merged">Merged</TabsTrigger>
             <TabsTrigger value="run">Run</TabsTrigger>
           </TabsList>

@@ -132,8 +132,7 @@ interface ChatPanelProps {
   multipleItineraries?: MultipleItineraries | null;
   onSelectItinerary?: (itinerary: any, option: ItineraryOption) => void;
   savingItinerary?: boolean;
-  lastFailedMessage?: string | null;
-}
+  lastFailedMessage?: string | null;  onShowTrace?: () => void;}
 
 export function ChatPanel({
   tripId,
@@ -145,7 +144,8 @@ export function ChatPanel({
   multipleItineraries,
   onSelectItinerary,
   savingItinerary,
-  lastFailedMessage
+  lastFailedMessage,
+  onShowTrace
 }: ChatPanelProps) {
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -272,14 +272,31 @@ function ItineraryOptionCard({
 
   return (
     <Card className="h-full flex flex-col overflow-hidden">
-      <CardHeader className="shrink-0">
-        <CardTitle>Chat</CardTitle>
-        <CardDescription>
-          {tripId ? 'Discuss your travel plans' : 'Select a trip to start chatting'}
-        </CardDescription>
+      <CardHeader className="shrink-0 p-4 md:p-6">
+        <div className="flex justify-between items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-lg md:text-xl">Chat</CardTitle>
+            <CardDescription className="text-sm">
+              {tripId ? 'Tell us about your travel plans' : 'Select or create a trip to start planning'}
+            </CardDescription>
+          </div>
+          {onShowTrace && tripId && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onShowTrace}
+              className="shrink-0 lg:hidden min-h-11 md:min-h-9"
+            >
+              <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              Trace
+            </Button>
+          )}
+        </div>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col gap-4 p-6 overflow-hidden min-h-0">
-        <div className="flex-1 overflow-y-auto pr-2 scrollbar-thin min-h-0">
+      <CardContent className="flex-1 flex flex-col gap-3 md:gap-4 overflow-hidden min-h-0 p-4 md:p-6">
+        <div className="flex-1 overflow-y-auto pr-3 md:pr-4 scrollbar-thin min-h-0">
           {!tripId ? (
             <div className="text-center text-slate-500 py-8">
               Select or create a trip to start chatting
@@ -289,7 +306,7 @@ function ItineraryOptionCard({
               No messages yet. Start the conversation!
             </div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-4 md:space-y-6">
               {messages.map((message, index) => (
                 <div key={message._id}>
                   {index > 0 && <Separator className="my-4" />}
@@ -339,7 +356,7 @@ function ItineraryOptionCard({
                   {lastFailedMessage && (
                     <div className="text-sm text-red-600 bg-red-100 p-2 rounded border border-red-200">
                       <span className="font-medium">Will retry:</span>
-                      <div className="mt-1 text-red-800 italic">"{lastFailedMessage}"</div>
+                      <div className="mt-1 text-red-800 italic">&ldquo;{lastFailedMessage}&rdquo;</div>
                     </div>
                   )}
                   <Button
@@ -384,23 +401,24 @@ function ItineraryOptionCard({
         </div>
 
         {tripId && (
-          <div className="flex gap-2 shrink-0">
+          <div className="flex gap-2 shrink-0 md:static sticky bottom-0 left-0 right-0 bg-white md:bg-transparent p-3 md:p-0 -mx-4 md:mx-0 -mb-4 md:mb-0 border-t md:border-t-0 border-slate-200 safe-bottom">
             <textarea
               ref={textareaRef}
-              placeholder="Type your message... (Enter to send, Ctrl+Enter for new line)"
+              placeholder="Type your message..."
               value={input}
               onChange={handleTextareaChange}
               onKeyDown={handleKeyDown}
               disabled={loading || !tripId}
-              className="flex-1 min-h-10 max-h-36 px-3 py-2 text-sm rounded-md border border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
+              className="flex-1 min-h-11 md:min-h-10 max-h-36 px-4 md:px-3 py-3 md:py-2 text-base md:text-sm rounded-md border border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 resize-none"
               rows={1}
             />
             <Button
               onClick={handleSend}
               disabled={loading || !input.trim() || !tripId}
+              className="min-h-11 min-w-15 md:min-h-0 md:min-w-0 text-base md:text-sm"
             >
               {loading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <Loader2 className="h-5 w-5 md:h-4 md:w-4 animate-spin" />
               ) : (
                 'Send'
               )}

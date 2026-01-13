@@ -83,47 +83,47 @@ export function ItineraryPanel({ itinerary, tripContext, tripId, onSaved }: Itin
 
   return (
     <Card className="h-full flex flex-col overflow-hidden">
-      <CardHeader className="shrink-0">
-        <div className="flex justify-between items-start">
-          <div className="flex-1">
-            <CardTitle>🎉 Your Itinerary</CardTitle>
-            <CardDescription>{itinerary.summary}</CardDescription>
+      <CardHeader className="shrink-0 p-4 md:p-6">
+        <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2">
+          <div className="flex-1 min-w-0">
+            <CardTitle className="text-lg md:text-xl">🎉 Your Itinerary</CardTitle>
+            <CardDescription className="text-sm">{itinerary.summary}</CardDescription>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0">
             <Button
               variant="outline"
               size="sm"
               onClick={handleSaveItinerary}
               disabled={saving || !tripId}
-              className="shrink-0"
+              className="shrink-0 min-h-11 md:min-h-9"
             >
               {saved ? <CheckCircle2 className="w-4 h-4" /> : <BookmarkPlus className="w-4 h-4" />}
-              <span className="ml-1">{saved ? 'Saved!' : 'Save'}</span>
+              <span className="ml-1.5">{saved ? 'Saved!' : 'Save'}</span>
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={handleCopyItinerary}
-              className="shrink-0"
+              className="shrink-0 min-h-11 md:min-h-9"
             >
               {copiedItinerary ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              <span className="ml-1">{copiedItinerary ? 'Copied!' : 'Copy'}</span>
+              <span className="ml-1.5">{copiedItinerary ? 'Copied!' : 'Copy'}</span>
             </Button>
             <Button
               variant="outline"
               size="sm"
               onClick={handleCopyJSON}
-              className="shrink-0"
+              className="shrink-0 min-h-11 md:min-h-9"
             >
               {copiedJSON ? <CheckCircle2 className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-              <span className="ml-1">JSON</span>
+              <span className="ml-1.5">JSON</span>
             </Button>
           </div>
         </div>
 
         {/* Badges for key preferences */}
         {tripContext && (
-          <div className="flex gap-2 flex-wrap mt-3">
+          <div className="flex gap-2 flex-wrap mt-4">
             {tripContext.trip.preferences.pace && (
               <Badge variant="secondary">{tripContext.trip.preferences.pace} pace</Badge>
             )}
@@ -140,84 +140,85 @@ export function ItineraryPanel({ itinerary, tripContext, tripId, onSaved }: Itin
         )}
       </CardHeader>
 
-      <CardContent className="flex-1 overflow-hidden">
-        <ScrollArea className="h-full pr-4">
-          <div className="space-y-6">
-            {/* Day-by-day cards */}
-            <div className="space-y-4">
-              <h3 className="text-lg font-semibold">Day-by-Day</h3>
-              {itinerary.days.map((day) => (
-                <Card key={day.dayNumber} className="border-2">
-                  <CardHeader className="pb-3">
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="text-base">Day {day.dayNumber}</CardTitle>
-                        <CardDescription className="text-sm">{day.date} • {day.title}</CardDescription>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent className="space-y-3">
-                    {/* Transport */}
-                    {day.transport && (
-                      <div>
-                        <p className="text-xs font-semibold text-slate-600 mb-1">🚗 Transport</p>
-                        <div className="text-sm bg-slate-50 rounded p-2">
-                          {renderObject(day.transport)}
+      <CardContent className="flex-1 overflow-hidden p-4 md:p-6">
+        <ScrollArea className="h-full">
+          <div className="space-y-4 md:space-y-6 pr-3 md:pr-4">
+            {/* Day-by-day accordions */}
+            <div className="space-y-3">
+              <h3 className="text-base md:text-lg font-semibold">Day-by-Day</h3>
+              {itinerary.days && itinerary.days.length > 0 ? (
+                <Accordion type="multiple" className="w-full space-y-2 md:space-y-3">
+                  {itinerary.days.map((day) => (
+                    <AccordionItem key={day.dayNumber} value={`day-${day.dayNumber}`} className="border rounded-lg px-4 bg-white">
+                      <AccordionTrigger className="hover:no-underline py-4">
+                        <div className="flex flex-col items-start text-left w-full">
+                          <div className="font-semibold text-base">Day {day.dayNumber}</div>
+                          <div className="text-sm text-slate-600 mt-0.5">{day.date} • {day.title}</div>
                         </div>
-                      </div>
-                    )}
-
-                    {/* Accommodation */}
-                    {day.accommodation && (
-                      <div>
-                        <p className="text-xs font-semibold text-slate-600 mb-1">🏨 Accommodation</p>
-                        <div className="text-sm bg-slate-50 rounded p-2">
-                          <p className="font-medium">{day.accommodation.name}</p>
-                          {day.accommodation.area && (
-                            <p className="text-xs text-slate-600">{day.accommodation.area}</p>
-                          )}
-                          {day.accommodation.estimatedCost && (
-                            <p className="text-xs text-slate-600 mt-1">{day.accommodation.estimatedCost}</p>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Meals */}
-                    {day.meals && day.meals.length > 0 && (
-                      <div>
-                        <p className="text-xs font-semibold text-slate-600 mb-1">🍽️ Meals</p>
-                        <div className="space-y-2">
-                          {day.meals.map((meal, mealIdx) => (
-                            <div key={mealIdx} className="text-sm bg-slate-50 rounded p-2">
-                              <Badge variant="outline" className="mb-1 text-xs">{meal.type}</Badge>
-                              <div className="mt-1">{meal.suggestion || renderObject(meal)}</div>
+                      </AccordionTrigger>
+                      <AccordionContent className="pb-4 pt-2">
+                        <div className="space-y-4">
+                          {/* Transport */}
+                          {day.transport && (
+                            <div className="bg-slate-50 p-3 rounded-md">
+                              <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">🚗 Transport</h4>
+                              <p className="text-sm text-slate-700">{renderValue(day.transport)}</p>
                             </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
+                          )}
 
-                    {/* Activities */}
-                    {day.activities && day.activities.length > 0 && (
-                      <div>
-                        <p className="text-xs font-semibold text-slate-600 mb-1">🎯 Activities</p>
-                        <ul className="space-y-1 text-sm">
-                          {day.activities.map((activity, actIdx) => (
-                            <li key={actIdx} className="bg-slate-50 rounded p-2">
-                              <div className="font-medium">{activity.name}</div>
-                              {activity.time && <div className="text-xs text-slate-600">Time: {activity.time}</div>}
-                              {activity.duration && <div className="text-xs text-slate-600">Duration: {activity.duration}</div>}
-                              {activity.description && <div className="mt-1 text-sm">{activity.description}</div>}
-                              {activity.estimatedCost && <div className="text-xs text-slate-600 mt-1">Cost: {activity.estimatedCost}</div>}
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
+                          {/* Accommodation */}
+                          {day.accommodation && (
+                            <div className="bg-slate-50 p-3 rounded-md">
+                              <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">🏨 Accommodation</h4>
+                              <div className="text-sm text-slate-700 space-y-1">
+                                <div><strong>Name:</strong> {day.accommodation.name}</div>
+                                {day.accommodation.area && <div><strong>Area:</strong> {day.accommodation.area}</div>}
+                                {day.accommodation.estimatedCost && (
+                                  <div><strong>Cost:</strong> {day.accommodation.estimatedCost}</div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Meals */}
+                          {day.meals && day.meals.length > 0 && (
+                            <div className="bg-slate-50 p-3 rounded-md">
+                              <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">🍽️ Meals</h4>
+                              <ul className="space-y-2 text-sm text-slate-700">
+                                {day.meals.map((meal, idx) => (
+                                  <li key={idx} className="leading-relaxed">
+                                    <strong className="text-slate-900">{meal.type}:</strong> {typeof meal.suggestion === 'string' ? meal.suggestion : renderValue(meal.suggestion)}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                          {/* Activities */}
+                          {day.activities && day.activities.length > 0 && (
+                            <div className="bg-slate-50 p-3 rounded-md">
+                              <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">🎯 Activities</h4>
+                              <ul className="space-y-2 text-sm text-slate-700">
+                                {day.activities.map((activity, idx) => (
+                                  <li key={idx} className="leading-relaxed">
+                                    {activity.name && <strong className="text-slate-900">{activity.name}</strong>}
+                                    {activity.time && <span className="text-slate-600"> ({activity.time})</span>}
+                                    {activity.duration && <span className="text-slate-600"> - {activity.duration}</span>}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      </AccordionContent>
+                    </AccordionItem>
+                  ))}
+                </Accordion>
+              ) : (
+                <div className="text-center py-8 text-slate-500">
+                  <p>No itinerary days found. Please generate an itinerary first.</p>
+                </div>
+              )}
             </div>
 
             {/* Alternative Options */}
@@ -280,6 +281,13 @@ export function ItineraryPanel({ itinerary, tripContext, tripId, onSaved }: Itin
       </CardContent>
     </Card>
   );
+}
+
+// Helper to render simple values
+function renderValue(value: unknown): React.ReactNode {
+  if (typeof value === 'string') return value;
+  if (typeof value === 'number' || typeof value === 'boolean') return String(value);
+  return renderObject(value);
 }
 
 // Helper to render unknown objects gracefully

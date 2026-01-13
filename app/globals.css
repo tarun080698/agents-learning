@@ -123,6 +123,19 @@
     @apply bg-background text-foreground;
   }
 
+  /* Remove fixed heights for responsive layouts */
+  html, body {
+    @apply min-h-screen;
+  }
+
+  /* Safe area for iOS devices */
+  @supports (padding: max(0px)) {
+    body {
+      padding-left: max(0px, env(safe-area-inset-left));
+      padding-right: max(0px, env(safe-area-inset-right));
+    }
+  }
+
   /* Custom scrollbar styling */
   .scrollbar-thin {
     scrollbar-width: thin;
@@ -145,4 +158,39 @@
   .scrollbar-thin::-webkit-scrollbar-thumb:hover {
     background-color: rgb(148 163 184);
   }
+
+  /* Touch-friendly tap targets */
+  @media (max-width: 767px) {
+    button, a, input, select, textarea {
+      min-height: 44px;
+    }
+  }
+
+  /* Reduce motion for accessibility */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+    }
+  }
 }
+
+/* Responsive utilities */
+@layer utilities {
+  .safe-top {
+    padding-top: env(safe-area-inset-top);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .safe-left {
+    padding-left: env(safe-area-inset-left);
+  }
+  .safe-right {
+    padding-right: env(safe-area-inset-right);
+  }
+}
+

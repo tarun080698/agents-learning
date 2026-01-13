@@ -5,10 +5,14 @@ import { UsernameGate } from '@/components/username-gate';
 import { TripsPanel } from '@/components/trips-panel';
 import { ChatPanel } from '@/components/chat-panel';
 import { TracePanel } from '@/components/trace-panel';
+import { ItineraryPanel } from '@/components/itinerary-panel';
 import { SavedItinerariesDrawer } from '@/components/saved-itineraries-drawer';
 import { ItinerarySelection } from '@/components/itinerary-selection';
+import { MobileHeader } from '@/components/mobile-header';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { LogOut } from 'lucide-react';
+import { useIsMobile, useIsTablet, useIsDesktop } from '@/hooks/useMediaQuery';
 import type { MasterOutput, TripContext, Task, SpecialistOutput, MergedItinerary, MultipleItineraries, ItineraryOption } from '@/lib/schemas/agent';
 
 interface Trip {
@@ -30,6 +34,14 @@ interface Message {
 }
 
 export default function Home() {
+  // Responsive hooks
+  const isMobile = useIsMobile();
+  const isTablet = useIsTablet();
+  const isDesktop = useIsDesktop();
+
+  // Mobile navigation state
+  const [mobileView, setMobileView] = useState<'trips' | 'chat'>('trips');
+
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [username, setUsername] = useState('');
   const [userId, setUserId] = useState('');
@@ -47,6 +59,8 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
+  const [traceDrawerOpen, setTraceDrawerOpen] = useState(false);
+  const [itineraryDrawerOpen, setItineraryDrawerOpen] = useState(false);
   const [showItinerarySavedNotification, setShowItinerarySavedNotification] = useState(false);
   const [savingItinerary, setSavingItinerary] = useState(false);
 
@@ -72,10 +86,17 @@ export default function Home() {
     if (selectedTripId) {
       loadMessages(selectedTripId);
       loadTripContext(selectedTripId);
+      loadLatestRun(selectedTripId);
+      loadLatestItinerary(selectedTripId);
     } else {
       setMessages([]);
       setTripContext(null);
       setMasterOutput(null);
+      setMergedItinerary(null);
+      setMultipleItineraries(null);
+      setTasks([]);
+      setSpecialistOutputs([]);
+      setRunStatus('in-progress');
     }
   }, [selectedTripId]);
 
@@ -156,7 +177,9 @@ export default function Home() {
         }
         if (data.run.multipleItineraries) {
           setMultipleItineraries(data.run.multipleItineraries);
-        } else if (data.run.mergedItinerary) {
+          // Don't set mergedItinerary from multipleItineraries - that's for selection UI
+        } else if (data.run.mergedItinerary && data.run.mergedItinerary.days) {
+          // Only set if it has the proper structure with days array
           setMergedItinerary(data.run.mergedItinerary);
         }
 
@@ -171,6 +194,28 @@ export default function Home() {
       }
     } catch (error) {
       console.error('Error loading latest run:', error);
+    }
+  };
+
+  const loadLatestItinerary = async (tripId: string) => {
+    try {
+      const response = await fetch(`/api/trips/${tripId}/itineraries`);
+      if (!response.ok) return;
+
+      const itineraries = await response.json();
+      if (itineraries && itineraries.length > 0) {
+        // Get the most recent saved itinerary
+        const latest = itineraries[0];
+        // The saved itinerary has the structure: { _id, itinerary, tripContext, savedAt, name }
+        // We need to extract the nested 'itinerary' property
+        if (latest && latest.itinerary && latest.itinerary.days) {
+          // Only set if we don't already have one from the latest run
+          // and if it has the proper structure with days array
+          setMergedItinerary(prev => prev || latest.itinerary);
+        }
+      }
+    } catch (error) {
+      console.error('Error loading latest itinerary:', error);
     }
   };
 
@@ -198,6 +243,22 @@ export default function Home() {
     // Reset error state when switching trips
     setError(null);
     setLastFailedMessage(null);
+    // On mobile, switch to chat view after selecting a trip
+    if (isMobile) {
+      setMobileView('chat');
+    }
+  };
+
+  const handleBackToTrips = () => {
+    setMobileView('trips');
+  };
+
+  const handleShowTrace = () => {
+    setTraceDrawerOpen(true);
+  };
+
+  const handleShowPlans = () => {
+    setItineraryDrawerOpen(true);
   };
 
   const handleDeleteTrip = async (tripId: string) => {
@@ -397,25 +458,112 @@ export default function Home() {
   }
 
   return (
-    <div className="h-screen bg-slate-50 p-5 flex flex-col overflow-hidden">
-      <div className="flex flex-col h-full max-w-400 mx-auto w-full gap-4">
-        {/* Header */}
-        <div className="flex justify-between items-center shrink-0">
-          <div>
-            <h1 className="text-3xl font-bold text-slate-900">Travel Planner</h1>
-            <p className="text-slate-600">Welcome, {username}!</p>
+    <div className="min-h-screen bg-white flex flex-col">
+      {/* Mobile Header - Trips List View */}
+      {isMobile && mobileView === 'trips' && (
+        <div className="sticky top-0 z-30 bg-white border-b border-slate-200 px-4 py-3 safe-top shrink-0">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-lg font-bold text-slate-900">Travel Planner</h1>
+              <p className="text-xs text-slate-600">Welcome, {username}!</p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleLogout}
+              className="min-h-11 min-w-11"
+              aria-label="Logout"
+            >
+              <LogOut className="w-4 h-4" />
+            </Button>
           </div>
-          <Button variant="outline" onClick={handleLogout}>
-            Logout
-          </Button>
         </div>
+      )}
 
-        {/* Main content */}
-        <div className="flex flex-col gap-4 flex-1 min-h-0">
-          {/* Top row: Trips, Chat, Trace */}
-          <div className="grid grid-cols-1 lg:grid-cols-4 gap-4 flex-1 min-h-0">
-            {/* Trips panel */}
-            <div className="lg:col-span-1 h-full min-h-0">
+      {/* Mobile Header - Chat View */}
+      {isMobile && mobileView === 'chat' && (
+        <MobileHeader
+          tripId={selectedTripId}
+          onBack={handleBackToTrips}
+          onShowTrace={handleShowTrace}
+          onShowPlans={handleShowPlans}
+          onLogout={handleLogout}
+          showBackButton={true}
+        />
+      )}
+
+      {/* Desktop Header - Hidden on mobile */}
+      {!isMobile && (
+        <div className="bg-white border-b border-slate-200 px-6 py-4 shrink-0">
+          <div className="max-w-400 mx-auto flex justify-between items-center">
+            <div>
+              <h1 className="text-2xl md:text-3xl font-bold text-slate-900">Travel Planner</h1>
+              <p className="text-sm md:text-base text-slate-600">Welcome, {username}!</p>
+            </div>
+            <Button variant="outline" onClick={handleLogout}>
+              Logout
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex overflow-hidden max-h-screen container mx-auto my-4">
+        {/* MOBILE LAYOUT - Show trips XOR chat */}
+        {isMobile && (
+          <>
+            {/* Mobile: Trips List */}
+            {mobileView === 'trips' && (
+              <div className="w-full h-full max-h-screen mx-auto">
+                <TripsPanel
+                  userId={userId}
+                  trips={trips}
+                  selectedTripId={selectedTripId}
+                  onSelectTrip={handleSelectTrip}
+                  onNewTrip={handleNewTrip}
+                  onViewSavedItineraries={() => setDrawerOpen(true)}
+                  onDeleteTrip={handleDeleteTrip}
+                  loading={loading}
+                />
+              </div>
+            )}
+
+            {/* Mobile: Chat View (full screen) */}
+            {mobileView === 'chat' && selectedTripId && (
+              <div className="w-full h-full">
+                <ChatPanel
+                  tripId={selectedTripId}
+                  messages={messages}
+                  onSendMessage={handleSendMessage}
+                  loading={loading}
+                  error={error}
+                  onRetry={handleRetry}
+                  multipleItineraries={multipleItineraries}
+                  onSelectItinerary={handleSelectItinerary}
+                  savingItinerary={savingItinerary}
+                  lastFailedMessage={lastFailedMessage}
+                  onShowTrace={handleShowTrace}
+                />
+              </div>
+            )}
+
+            {/* Mobile: Prompt to select trip */}
+            {mobileView === 'chat' && !selectedTripId && (
+              <div className="w-full h-full flex items-center justify-center p-6">
+                <div className="text-center">
+                  <p className="text-slate-600 mb-4">Select a trip to start chatting</p>
+                  <Button onClick={handleBackToTrips}>View Trips</Button>
+                </div>
+              </div>
+            )}
+          </>
+        )}
+
+        {/* TABLET LAYOUT - Collapsible sidebar + chat + optional itinerary drawer */}
+        {isTablet && !isDesktop && (
+          <div className="flex w-full h-full max-h-[calc(100vh-120px)] mx-auto gap-4 container">
+            {/* Tablet: Trips Sidebar (collapsible) */}
+            <div className="w-80 shrink-0 ">
               <TripsPanel
                 userId={userId}
                 trips={trips}
@@ -428,8 +576,8 @@ export default function Home() {
               />
             </div>
 
-            {/* Chat panel */}
-            <div className="lg:col-span-2 h-full min-h-0">
+            {/* Tablet: Chat Area */}
+            <div className="flex-1 min-w-0">
               <ChatPanel
                 tripId={selectedTripId}
                 messages={messages}
@@ -441,44 +589,206 @@ export default function Home() {
                 onSelectItinerary={handleSelectItinerary}
                 savingItinerary={savingItinerary}
                 lastFailedMessage={lastFailedMessage}
+                onShowTrace={handleShowTrace}
               />
-            </div>
-
-            {/* Trace panel */}
-            <div className="lg:col-span-1 h-full min-h-0">
-              <TracePanel
-                masterOutput={masterOutput}
-                tripContext={tripContext}
-                tasks={tasks}
-                specialistOutputs={specialistOutputs}
-                mergedItinerary={mergedItinerary}
-                runStatus={runStatus}
-              />
-            </div>
-          </div>
-
-          {/* Itinerary selection is now inline in the chat panel */}
-        </div>
-
-        {/* Notification when itinerary is saved */}
-        {showItinerarySavedNotification && (
-          <div className="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-5">
-            <div className="bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-              </svg>
-              <span className="font-medium">Itinerary saved! Click the bookmark icon to view it.</span>
             </div>
           </div>
         )}
 
-        {/* Saved Itineraries Drawer */}
-        <SavedItinerariesDrawer
-          open={drawerOpen}
-          onOpenChange={setDrawerOpen}
-          tripId={selectedTripId}
-        />
+        {/* DESKTOP LAYOUT - 3-column: trips | chat | itinerary */}
+        {isDesktop && (
+          <div className="flex w-full h-full max-h-[calc(100vh-120px)] mx-auto gap-4 container">
+            {/* Desktop: Trips Panel (25%) */}
+            <div className="w-[25%] min-w-75 max-w-100">
+              <TripsPanel
+                userId={userId}
+                trips={trips}
+                selectedTripId={selectedTripId}
+                onSelectTrip={handleSelectTrip}
+                onNewTrip={handleNewTrip}
+                onViewSavedItineraries={() => setDrawerOpen(true)}
+                onDeleteTrip={handleDeleteTrip}
+                loading={loading}
+              />
+            </div>
+
+            {/* Desktop: Chat Panel (45%) */}
+            <div className=" w-[45%] min-w-0 shrink-0">
+              <ChatPanel
+                tripId={selectedTripId}
+                messages={messages}
+                onSendMessage={handleSendMessage}
+                loading={loading}
+                error={error}
+                onRetry={handleRetry}
+                multipleItineraries={multipleItineraries}
+                onSelectItinerary={handleSelectItinerary}
+                savingItinerary={savingItinerary}
+                lastFailedMessage={lastFailedMessage}                onShowTrace={handleShowTrace}              />
+            </div>
+
+            {/* Desktop: Itinerary Panel (30%) */}
+            <div className="w-[30%] min-w-87.5">
+              <ItineraryPanel
+                itinerary={mergedItinerary}
+                tripContext={tripContext}
+                tripId={selectedTripId}
+                onSaved={() => {
+                  setShowItinerarySavedNotification(true);
+                  setTimeout(() => setShowItinerarySavedNotification(false), 5000);
+                }}
+              />
+            </div>
+          </div>
+        )}
       </div>
+
+      {/* Trace Drawer - Available on all screen sizes */}
+      {traceDrawerOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 animate-in fade-in duration-200"
+          onClick={() => setTraceDrawerOpen(false)}
+        >
+          <div
+            className="fixed right-0 top-0 h-full w-[90%] md:w-[60%] lg:w-[40%] bg-white shadow-2xl animate-in slide-in-from-right duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="h-full flex flex-col">
+              {/* Drawer Header */}
+              <div className="flex justify-between items-center p-4 shrink-0">
+                <h2 className="text-lg font-semibold text-slate-900">Execution Trace</h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setTraceDrawerOpen(false)}
+                  aria-label="Close trace drawer"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </Button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-hidden">
+                <TracePanel
+                  masterOutput={masterOutput}
+                  tripContext={tripContext}
+                  tasks={tasks}
+                  specialistOutputs={specialistOutputs}
+                  mergedItinerary={mergedItinerary}
+                  runStatus={runStatus}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Saved Itineraries Drawer */}
+      <SavedItinerariesDrawer
+        open={drawerOpen}
+        onOpenChange={setDrawerOpen}
+        tripId={selectedTripId}
+      />
+
+      {/* Itinerary Drawer - Tablet only */}
+      {isTablet && !isDesktop && itineraryDrawerOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 animate-in fade-in duration-200"
+          onClick={() => setItineraryDrawerOpen(false)}
+        >
+          <div
+            className="fixed right-0 top-0 h-full w-[60%] bg-white shadow-2xl animate-in slide-in-from-right duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="h-full flex flex-col">
+              {/* Drawer Header */}
+              <div className="flex justify-between items-center p-4 shrink-0">
+                <h2 className="text-lg font-semibold text-slate-900">Current Itinerary</h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setItineraryDrawerOpen(false)}
+                  aria-label="Close itinerary drawer"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </Button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-hidden">
+                <ItineraryPanel
+                  itinerary={mergedItinerary}
+                  tripContext={tripContext}
+                  tripId={selectedTripId}
+                  onSaved={() => {
+                    setShowItinerarySavedNotification(true);
+                    setTimeout(() => setShowItinerarySavedNotification(false), 5000);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Itinerary Drawer */}
+      {isMobile && itineraryDrawerOpen && (
+        <div
+          className="fixed inset-0 bg-black/50 z-40 animate-in fade-in duration-200"
+          onClick={() => setItineraryDrawerOpen(false)}
+        >
+          <div
+            className="fixed right-0 top-0 h-full w-[90%] bg-white shadow-2xl animate-in slide-in-from-right duration-300"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="h-full flex flex-col">
+              {/* Drawer Header */}
+              <div className="flex justify-between items-center p-4 shrink-0">
+                <h2 className="text-lg font-semibold text-slate-900">Current Itinerary</h2>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setItineraryDrawerOpen(false)}
+                  aria-label="Close itinerary drawer"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                  </svg>
+                </Button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="flex-1 overflow-hidden">
+                <ItineraryPanel
+                  itinerary={mergedItinerary}
+                  tripContext={tripContext}
+                  tripId={selectedTripId}
+                  onSaved={() => {
+                    setShowItinerarySavedNotification(true);
+                    setTimeout(() => setShowItinerarySavedNotification(false), 5000);
+                  }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notification when itinerary is saved */}
+      {showItinerarySavedNotification && (
+        <div className="fixed bottom-4 right-4 z-50 animate-in slide-in-from-bottom-5">
+          <div className="bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg flex items-center gap-3">
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+            </svg>
+            <span className="font-medium">Itinerary saved!</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

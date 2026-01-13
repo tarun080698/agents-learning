@@ -16,7 +16,7 @@ export async function GET(
 
     const runsCollection = await getRunsCollection();
     const latestRun = await runsCollection.findOne(
-      { tripId: new ObjectId(tripId), status: 'completed' },
+      { tripId: new ObjectId(tripId), status: { $in: ['ok', 'completed'] } },
       { sort: { createdAt: -1 } }
     );
 
