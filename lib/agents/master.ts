@@ -317,7 +317,20 @@ SPECIALIST OUTPUTS:
 ${JSON.stringify(specialistOutputs, null, 2)}
 
 FINALIZE MODE OUTPUT (REQUIRED - USE THIS STRUCTURE):
-IMPORTANT: Try to create 2-3 different itinerary options for the user to choose from. If the trip is simple or constraints are very specific, you may provide 1-2 options.
+**MANDATORY: You MUST create 2-3 COMPLETELY DIFFERENT itinerary options!**
+
+Each option must be DISTINCTLY DIFFERENT from the others. Create diversity through:
+- Budget level (economy vs mid-range vs luxury)
+- Pace (relaxed vs moderate vs packed)
+- Focus (adventure vs culture vs relaxation)
+- Style (local/authentic vs tourist-friendly vs exclusive)
+
+DO NOT create similar options - make each one appeal to a different type of traveler!
+
+Example diversity patterns:
+- Option 1: Budget-conscious, packed schedule, street food focus
+- Option 2: Mid-range, balanced pace, mix of experiences
+- Option 3: Luxury, relaxed pace, fine dining and premium hotels
 
 {
   "mode": "FINALIZE",
@@ -405,12 +418,16 @@ IMPORTANT: Try to create 2-3 different itinerary options for the user to choose 
 }
 
 CRITICAL RULES FOR FINALIZE MODE:
-1. Always create 2-3 distinct options with meaningful differences
-2. Vary the options by budget, pace, style, or focus
-3. Each option should have a clear theme and target audience
-4. Provide specific highlights and estimated costs for each
-5. Use tags to help users quickly understand each option
-6. You MUST output mode="FINALIZE" when specialist outputs are present. Do not use DISPATCH or CLARIFY.
+1. **MANDATORY: Always create AT LEAST 2 distinct options** (3 is preferred)
+2. Each option MUST be meaningfully different - not just minor variations
+3. Vary options by: budget tier, activity pace, accommodation style, dining approach, or experience focus
+4. Each option should target a different traveler type or preference
+5. Option titles must clearly convey the key difference (e.g., "Budget Explorer", "Balanced Comfort", "Luxury Escape")
+6. Provide specific highlights that show why this option is unique
+7. Estimated costs should reflect the tier (budget: 30-50% less, luxury: 50-100% more than mid-range)
+8. Use descriptive tags that help users quickly identify the option's character
+9. You MUST output mode="FINALIZE" when specialist outputs are present
+10. **If you create only 1 option, the response will be rejected - always create 2-3!**
 
 CRITICAL FORMATTING RULES FOR ITINERARY DAYS:
 - meals[].suggestion MUST be a STRING, not an object. Format as: "Restaurant Name (cuisine/details) - Description. Address. $XX-YY per person."
@@ -660,7 +677,7 @@ export async function callMasterAgent(input: MasterAgentInput): Promise<MasterAg
           },
           {
             role: 'user',
-            content: `ERROR: You used mode="${normalizedOutput.mode}" but specialist outputs are present. You MUST use mode="FINALIZE" to merge the specialist recommendations into 1-3 different itinerary options (preferably 2-3). Return the complete JSON with mode="FINALIZE" and include the multipleItineraries field with options array.`,
+            content: `ERROR: You used mode="${normalizedOutput.mode}" but specialist outputs are present. You MUST use mode="FINALIZE" to merge the specialist recommendations into 2-3 COMPLETELY DIFFERENT itinerary options. Each option must appeal to different traveler types (budget/mid/luxury OR relaxed/moderate/packed OR adventure/culture/relaxation). Return the complete JSON with mode="FINALIZE" and include the multipleItineraries field with AT LEAST 2 distinct options.`,
           },
         ],
         response_format: { type: 'json_object' },

@@ -295,8 +295,8 @@ function ItineraryOptionCard({
           )}
         </div>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col overflow-hidden min-h-0">
-        <div className="flex-1 overflow-y-auto pr-3 md:pr-4 scrollbar-thin min-h-0">
+      <CardContent className="flex-1 flex flex-col overflow-hidden h-full max-h-screen">
+        <div className="flex-1 overflow-y-auto pr-3 md:pr-4 scrollbar-thin min-h-0 pb-2">
           {!tripId ? (
             <div className="text-center text-slate-500 py-8">
               Select or create a trip to start chatting
@@ -403,7 +403,7 @@ function ItineraryOptionCard({
         </div>
 
         {tripId && (
-          <div className="flex gap-2 shrink-0 md:static sticky bottom-0 left-0 right-0 bg-white md:bg-transparent p-3 md:p-0 -mx-4 md:mx-0 border-t md:border-t-0 border-slate-200 safe-bottom mb-2">
+          <div className="flex gap-2 shrink-0 pt-2 border-t border-slate-200">
             <textarea
               ref={textareaRef}
               placeholder="Type your message..."

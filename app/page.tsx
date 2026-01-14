@@ -580,7 +580,7 @@ export default function Home() {
   }
 
   return (
-    <div className="min-h-screen bg-white flex flex-col">
+    <div className="max-h-screen bg-white flex flex-col">
       {/* Mobile Header - Trips List View */}
       {isMobile && mobileView === 'trips' && (
         <div className="sticky top-0 z-30 bg-white border-b border-slate-200 px-4 py-3 safe-top shrink-0">
@@ -630,13 +630,13 @@ export default function Home() {
       )}
 
       {/* Main Content Area */}
-      <div className="flex-1 flex overflow-hidden max-h-screen container mx-auto my-4">
+      <div className="flex-1 flex h-screen container mx-auto my-4">
         {/* MOBILE LAYOUT - Show trips XOR chat */}
         {isMobile && (
           <>
             {/* Mobile: Trips List */}
             {mobileView === 'trips' && (
-              <div className="w-full h-full max-h-screen mx-auto">
+              <div className="w-full h-full mx-auto">
                 <TripsPanel
                   userId={userId}
                   trips={trips}
