@@ -9,6 +9,20 @@ interface Trip {
   _id: string;
   userId: string;
   status: string;
+  title?: string;
+  origin?: string;
+  destination?: string;
+  tripDates?: {
+    start?: string;
+    end?: string;
+  };
+  progress?: {
+    hasDestination: boolean;
+    hasOrigin: boolean;
+    hasDates: boolean;
+    hasItinerary: boolean;
+    percentComplete: number;
+  };
   tripContext: Record<string, unknown>;
   createdAt: string;
   updatedAt: string;
@@ -51,7 +65,7 @@ export function TripsPanel({
   };
   return (
     <Card className="h-full flex flex-col overflow-hidden">
-      <CardHeader className="shrink-0 p-4 md:p-6">
+      <CardHeader className="shrink-0">
         <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2">
           <div className="flex-1 min-w-0">
             <CardTitle className="text-lg md:text-xl">Your Trips</CardTitle>
@@ -59,14 +73,14 @@ export function TripsPanel({
           </div>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col gap-3 md:gap-4 p-4 md:p-6 overflow-hidden min-h-0">
+      <CardContent className="flex-1 flex flex-col overflow-hidden min-h-0 gap-3">
         <div className="flex flex-col md:flex-row gap-2 shrink-0">
           <Button
             onClick={onNewTrip}
             disabled={loading}
             className="w-full md:flex-1 min-h-[44px] md:min-h-0 text-base md:text-sm"
           >
-            + New Trip
+            + New
           </Button>
           {onViewSavedItineraries && selectedTripId && (
             <Button
@@ -75,19 +89,21 @@ export function TripsPanel({
               variant="outline"
               className="w-full md:w-auto md:shrink-0 min-h-[44px] md:min-h-0 text-base md:text-sm"
             >
-              <BookOpen className="w-4 h-4" /> <span className="ml-2">Saved Itineraries</span>
+              <BookOpen className="w-4 h-4" /> <span className="ml-2">My Itineraries</span>
             </Button>
           )}
         </div>
 
-        <div className="flex-1 overflow-y-auto pr-3 md:pr-4 scrollbar-thin min-h-0">
+        <div className="flex-1 overflow-y-auto scrollbar-thin min-h-0">
           {trips.length === 0 ? (
             <div className="text-center text-slate-500 py-8">
               No trips yet. Create your first trip!
             </div>
           ) : (
             <div className="space-y-2 md:space-y-3">
-              {trips.map((trip) => (
+              {trips.map((trip) => {
+                const hasProgress = trip.progress && trip.progress.percentComplete > 0;
+                return (
                 <div
                   key={trip._id}
                   onClick={() => onSelectTrip(trip._id)}
@@ -98,13 +114,39 @@ export function TripsPanel({
                   }`}
                 >
                   <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <div className="font-medium text-base md:text-sm truncate">Trip {trip._id.slice(-6)}</div>
-                      <div className="text-sm md:text-xs text-slate-500">
-                        Status: {trip.status}
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="font-medium text-base md:text-sm truncate">
+                        {trip.title || `Trip ${trip._id.slice(-6)}`}
                       </div>
+
+                      {/* Trip dates if available */}
+                      {trip.tripDates?.start && trip.tripDates?.end && (
+                        <div className="text-xs text-slate-600 flex items-center gap-1">
+                          <span>📅</span>
+                          <span>
+                            {new Date(trip.tripDates.start).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - {new Date(trip.tripDates.end).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Progress bar */}
+                      {hasProgress && trip.progress && (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-blue-500 transition-all duration-300"
+                              style={{ width: `${trip.progress.percentComplete}%` }}
+                            />
+                          </div>
+                          <span className="text-xs text-slate-500 font-medium">
+                            {trip.progress.percentComplete}%
+                          </span>
+                        </div>
+                      )}
+
+                      {/* Created date */}
                       <div className="text-xs text-slate-400">
-                        {new Date(trip.updatedAt).toLocaleDateString()}
+                        Created {new Date(trip.createdAt).toLocaleDateString()}
                       </div>
                     </div>
                     <Button
@@ -119,7 +161,7 @@ export function TripsPanel({
                     </Button>
                   </div>
                 </div>
-              ))}
+              )})}
             </div>
           )}
         </div>

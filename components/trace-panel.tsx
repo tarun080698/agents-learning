@@ -28,7 +28,7 @@ export function TracePanel({
 }: TracePanelProps) {
   return (
     <Card className="h-full flex flex-col overflow-hidden">
-      <CardHeader className="shrink-0 p-4 md:p-6">
+      <CardHeader className="shrink-0">
         <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-2">
           <div className="flex-1 min-w-0">
             <CardTitle className="text-lg md:text-xl">Execution Trace</CardTitle>
@@ -45,7 +45,7 @@ export function TracePanel({
           </Badge>
         </div>
       </CardHeader>
-      <CardContent className="flex-1 overflow-hidden p-4 md:p-6">
+      <CardContent className="flex-1 overflow-hidden">
         <Tabs defaultValue="context" className="h-full flex flex-col">
           <TabsList className="shrink-0 grid w-full grid-cols-5 text-xs md:text-sm h-auto md:h-10">
             <TabsTrigger value="context" className="py-2 px-1 md:px-3">Context</TabsTrigger>

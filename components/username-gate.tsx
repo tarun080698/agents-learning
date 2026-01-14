@@ -61,7 +61,7 @@ export function UsernameGate({ onLogin }: UsernameGateProps) {
           <CardTitle>Welcome to Travel Planner</CardTitle>
           <CardDescription>Enter your username to continue</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4">
+        <CardContent>
           <Input
             type="text"
             placeholder="Username"

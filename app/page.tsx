@@ -56,6 +56,7 @@ export default function Home() {
   const [tasks, setTasks] = useState<Task[]>([]);
   const [specialistOutputs, setSpecialistOutputs] = useState<SpecialistOutput[]>([]);
   const [runStatus, setRunStatus] = useState<'in-progress' | 'completed' | 'failed'>('in-progress');
+  const [currentRunId, setCurrentRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastFailedMessage, setLastFailedMessage] = useState<string | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -97,6 +98,7 @@ export default function Home() {
       setTasks([]);
       setSpecialistOutputs([]);
       setRunStatus('in-progress');
+      setCurrentRunId(null);
     }
   }, [selectedTripId]);
 
@@ -124,8 +126,19 @@ export default function Home() {
       if (!response.ok) throw new Error('Failed to load trips');
       const data = await response.json();
       setTrips(data);
+
+      // If there's a selected trip, update its context immediately
+      if (selectedTripId) {
+        const selectedTrip = data.find((t: any) => t._id === selectedTripId);
+        if (selectedTrip && selectedTrip.tripContext) {
+          setTripContext(selectedTrip.tripContext);
+        }
+      }
+
+      return data; // Return the data for use in callers
     } catch (error) {
       console.error('Error loading trips:', error);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -165,6 +178,9 @@ export default function Home() {
 
       const data = await response.json();
       if (data.run) {
+        // Store the run ID for tracking saved itineraries
+        setCurrentRunId(data.run._id?.toString() || null);
+
         // Restore run state
         if (data.run.masterOutput) {
           setMasterOutput(data.run.masterOutput);
@@ -176,7 +192,18 @@ export default function Home() {
           setSpecialistOutputs(data.run.specialistOutputs);
         }
         if (data.run.multipleItineraries) {
-          setMultipleItineraries(data.run.multipleItineraries);
+          // Don't show selection UI if user already selected an itinerary from this run
+          if (data.run.status === 'itinerary_selected') {
+            // Itinerary already selected, don't show options again
+            // Try to load the selected itinerary from saved itineraries
+            const savedItinerary = await checkIfItinerarySaved(tripId, data.run._id);
+            if (savedItinerary) {
+              // User already made their selection
+            }
+          } else {
+            // No selection made yet, show the options
+            setMultipleItineraries(data.run.multipleItineraries);
+          }
           // Don't set mergedItinerary from multipleItineraries - that's for selection UI
         } else if (data.run.mergedItinerary && data.run.mergedItinerary.days) {
           // Only set if it has the proper structure with days array
@@ -197,6 +224,27 @@ export default function Home() {
     }
   };
 
+  const checkIfItinerarySaved = async (tripId: string, runId?: string): Promise<boolean> => {
+    try {
+      const response = await fetch(`/api/trips/${tripId}/itineraries`);
+      if (!response.ok) return false;
+
+      const itineraries = await response.json();
+      if (!itineraries || itineraries.length === 0) return false;
+
+      // If runId is provided, check if any saved itinerary has this runId
+      if (runId) {
+        return itineraries.some((saved: any) => saved.runId === runId);
+      }
+
+      // Otherwise, just check if any itinerary exists
+      return true;
+    } catch (error) {
+      console.error('Error checking saved itinerary:', error);
+      return false;
+    }
+  };
+
   const loadLatestItinerary = async (tripId: string) => {
     try {
       const response = await fetch(`/api/trips/${tripId}/itineraries`);
@@ -209,9 +257,11 @@ export default function Home() {
         // The saved itinerary has the structure: { _id, itinerary, tripContext, savedAt, name }
         // We need to extract the nested 'itinerary' property
         if (latest && latest.itinerary && latest.itinerary.days) {
-          // Only set if we don't already have one from the latest run
-          // and if it has the proper structure with days array
-          setMergedItinerary(prev => prev || latest.itinerary);
+          // Set the saved itinerary if there's no active run itinerary
+          // This ensures we show the saved itinerary for the current trip
+          if (!mergedItinerary) {
+            setMergedItinerary(latest.itinerary);
+          }
         }
       }
     } catch (error) {
@@ -260,6 +310,13 @@ export default function Home() {
   const handleShowPlans = () => {
     setItineraryDrawerOpen(true);
   };
+
+  // Check if there's trace data to show
+  const hasTraceData = Boolean(
+    masterOutput ||
+    (tasks && tasks.length > 0) ||
+    (specialistOutputs && specialistOutputs.length > 0)
+  );
 
   const handleDeleteTrip = async (tripId: string) => {
     // Get trip details for better confirmation
@@ -372,7 +429,8 @@ export default function Home() {
       // Reload messages after sending
       await loadMessages(selectedTripId);
 
-      // Reload trips to update updatedAt and tripContext
+      // Reload trips to get updated metadata (title, progress, etc.)
+      // This also updates the tripContext for the selected trip
       await loadTrips();
     } catch (error) {
       console.error('Error sending message:', error);
@@ -404,20 +462,73 @@ export default function Home() {
 
     setSavingItinerary(true);
     try {
-      await saveItineraryAutomatically(itinerary, tripContext, option.title);
+      // Use the currentRunId from the loaded run
+      await saveItineraryAutomatically(itinerary, tripContext, option.title, currentRunId || undefined);
       setMergedItinerary(itinerary);
       setMultipleItineraries(null); // Hide selection UI
 
-      // Show confirmation message
+      // Mark the run as having an itinerary selected
+      if (currentRunId) {
+        try {
+          await fetch(`/api/runs/${currentRunId}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              status: 'itinerary_selected',
+              selectedOptionId: option.id,
+            }),
+          });
+        } catch (error) {
+          console.error('Error updating run status:', error);
+        }
+      }
+
+      // Update trip metadata to mark itinerary as complete
+      try {
+        await fetch(`/api/trips/${selectedTripId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            updateMetadata: true,
+            hasItinerary: true,
+          }),
+        });
+
+        // Reload trips to refresh the UI with updated metadata
+        await loadTrips();
+      } catch (metadataError) {
+        console.error('Error updating trip metadata:', metadataError);
+      }
+
+      // Save confirmation message to database
       const confirmationMessage = {
-        _id: `system-${Date.now()}`,
         tripId: selectedTripId,
-        role: 'assistant',
+        role: 'system' as const,
         agentName: 'System',
         content: `✅ **${option.title}** has been saved! You can view the full itinerary details anytime by clicking the bookmark icon.`,
-        createdAt: new Date().toISOString(),
       };
-      setMessages(prev => [...prev, confirmationMessage]);
+
+      try {
+        await fetch('/api/messages', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(confirmationMessage),
+        });
+
+        // Reload messages to include the saved confirmation
+        await loadMessages(selectedTripId);
+      } catch (error) {
+        console.error('Error saving confirmation message:', error);
+        // Still show the message in UI even if DB save fails
+        setMessages(prev => [...prev, {
+          _id: `system-${Date.now()}`,
+          tripId: selectedTripId,
+          role: 'system',
+          agentName: 'System',
+          content: confirmationMessage.content,
+          createdAt: new Date().toISOString(),
+        }]);
+      }
     } catch (error) {
       console.error('Error saving selected itinerary:', error);
       setError('Failed to save itinerary. Please try again.');
@@ -429,11 +540,21 @@ export default function Home() {
   const saveItineraryAutomatically = async (
     itinerary: MergedItinerary,
     tripContext: TripContext | null,
-    customName?: string
+    customName?: string,
+    runId?: string
   ) => {
     if (!selectedTripId) return;
 
     try {
+      // Check if this exact itinerary (by runId) has already been saved
+      if (runId) {
+        const alreadySaved = await checkIfItinerarySaved(selectedTripId, runId);
+        if (alreadySaved) {
+          console.log('Itinerary already saved, skipping duplicate save');
+          return;
+        }
+      }
+
       const response = await fetch(`/api/trips/${selectedTripId}/itineraries`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -441,6 +562,7 @@ export default function Home() {
           itinerary,
           tripContext,
           name: customName || `${itinerary.summary.substring(0, 50)}${itinerary.summary.length > 50 ? '...' : ''}`,
+          runId, // Include runId to track which run this itinerary came from
         }),
       });
 
@@ -542,7 +664,7 @@ export default function Home() {
                   onSelectItinerary={handleSelectItinerary}
                   savingItinerary={savingItinerary}
                   lastFailedMessage={lastFailedMessage}
-                  onShowTrace={handleShowTrace}
+                  onShowTrace={hasTraceData ? handleShowTrace : undefined}
                 />
               </div>
             )}
@@ -561,7 +683,7 @@ export default function Home() {
 
         {/* TABLET LAYOUT - Collapsible sidebar + chat + optional itinerary drawer */}
         {isTablet && !isDesktop && (
-          <div className="flex w-full h-full max-h-[calc(100vh-120px)] mx-auto gap-4 container">
+          <div className="flex w-full h-full max-h-[calc(100vh-150px)] mx-auto gap-4 container">
             {/* Tablet: Trips Sidebar (collapsible) */}
             <div className="w-80 shrink-0 ">
               <TripsPanel
@@ -589,7 +711,7 @@ export default function Home() {
                 onSelectItinerary={handleSelectItinerary}
                 savingItinerary={savingItinerary}
                 lastFailedMessage={lastFailedMessage}
-                onShowTrace={handleShowTrace}
+              onShowTrace={hasTraceData ? handleShowTrace : undefined}
               />
             </div>
           </div>
@@ -597,7 +719,7 @@ export default function Home() {
 
         {/* DESKTOP LAYOUT - 3-column: trips | chat | itinerary */}
         {isDesktop && (
-          <div className="flex w-full h-full max-h-[calc(100vh-120px)] mx-auto gap-4 container">
+          <div className="flex w-full h-full max-h-[calc(100vh-150px)] mx-auto gap-4 container">
             {/* Desktop: Trips Panel (25%) */}
             <div className="w-[25%] min-w-75 max-w-100">
               <TripsPanel
@@ -612,8 +734,8 @@ export default function Home() {
               />
             </div>
 
-            {/* Desktop: Chat Panel (45%) */}
-            <div className=" w-[45%] min-w-0 shrink-0">
+            {/* Desktop: Chat Panel - dynamic width based on itinerary panel */}
+            <div className={mergedItinerary ? "w-[45%] min-w-0" : "w-[75%] min-w-0"}>
               <ChatPanel
                 tripId={selectedTripId}
                 messages={messages}
@@ -624,27 +746,31 @@ export default function Home() {
                 multipleItineraries={multipleItineraries}
                 onSelectItinerary={handleSelectItinerary}
                 savingItinerary={savingItinerary}
-                lastFailedMessage={lastFailedMessage}                onShowTrace={handleShowTrace}              />
-            </div>
-
-            {/* Desktop: Itinerary Panel (30%) */}
-            <div className="w-[30%] min-w-87.5">
-              <ItineraryPanel
-                itinerary={mergedItinerary}
-                tripContext={tripContext}
-                tripId={selectedTripId}
-                onSaved={() => {
-                  setShowItinerarySavedNotification(true);
-                  setTimeout(() => setShowItinerarySavedNotification(false), 5000);
-                }}
+                lastFailedMessage={lastFailedMessage}
+                onShowTrace={hasTraceData ? handleShowTrace : undefined}
               />
             </div>
+
+            {/* Desktop: Itinerary Panel (30%) - only show if there's an itinerary */}
+            {mergedItinerary && (
+              <div className="w-[30%] min-w-87.5">
+                <ItineraryPanel
+                  itinerary={mergedItinerary}
+                  tripContext={tripContext}
+                  tripId={selectedTripId}
+                  onSaved={() => {
+                    setShowItinerarySavedNotification(true);
+                    setTimeout(() => setShowItinerarySavedNotification(false), 5000);
+                  }}
+                />
+              </div>
+            )}
           </div>
         )}
       </div>
 
-      {/* Trace Drawer - Available on all screen sizes */}
-      {traceDrawerOpen && (
+      {/* Trace Drawer - Available on all screen sizes, only when there's trace data */}
+      {traceDrawerOpen && hasTraceData && (
         <div
           className="fixed inset-0 bg-black/50 z-40 animate-in fade-in duration-200"
           onClick={() => setTraceDrawerOpen(false)}

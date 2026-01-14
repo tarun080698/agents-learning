@@ -19,6 +19,7 @@ import {
   filterMasterOutput,
   getQuestionContext,
 } from '@/lib/utils/questionLedger';
+import { generateTripMetadata } from '@/lib/utils/tripMetadata';
 
 // Request validation schema
 const chatRequestSchema = z.object({
@@ -197,11 +198,17 @@ export async function POST(req: NextRequest) {
       });
 
       // Update trip context with filtered output
+      const metadata = generateTripMetadata(filteredOutput.updatedTripContext, false);
       await tripsCollection.updateOne(
         { _id: new ObjectId(tripId) },
         {
           $set: {
             tripContext: filteredOutput.updatedTripContext as Record<string, unknown>,
+            title: metadata.title,
+            origin: metadata.origin,
+            destination: metadata.destination,
+            tripDates: metadata.tripDates,
+            progress: metadata.progress,
             updatedAt: new Date(),
           },
         }
@@ -247,11 +254,17 @@ export async function POST(req: NextRequest) {
       });
 
       // Update trip context
+      const metadata = generateTripMetadata(masterOutput.updatedTripContext, false);
       await tripsCollection.updateOne(
         { _id: new ObjectId(tripId) },
         {
           $set: {
             tripContext: masterOutput.updatedTripContext as Record<string, unknown>,
+            title: metadata.title,
+            origin: metadata.origin,
+            destination: metadata.destination,
+            tripDates: metadata.tripDates,
+            progress: metadata.progress,
             updatedAt: new Date(),
           },
         }
@@ -425,12 +438,18 @@ export async function POST(req: NextRequest) {
       });
 
       // Update trip with multiple itineraries and updated context
+      const metadata = generateTripMetadata(finalizeOutput.updatedTripContext, true);
       await tripsCollection.updateOne(
         { _id: new ObjectId(tripId) },
         {
           $set: {
             tripContext: finalizeOutput.updatedTripContext as Record<string, unknown>,
             activeItinerary: multipleItineraries as Record<string, unknown>,
+            title: metadata.title,
+            origin: metadata.origin,
+            destination: metadata.destination,
+            tripDates: metadata.tripDates,
+            progress: metadata.progress,
             updatedAt: new Date(),
           },
         }

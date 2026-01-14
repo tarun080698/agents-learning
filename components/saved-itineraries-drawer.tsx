@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import {
   Drawer,
   DrawerContent,
@@ -259,119 +260,82 @@ function ItineraryDetails({ itinerary }: { itinerary: MergedItinerary }) {
 
       <Separator />
 
-      {/* Daily Itinerary */}
+      {/* Daily Itinerary - Accordion View */}
       <div>
         <h3 className="font-bold text-xl mb-4 flex items-center gap-2">
           <span>📅</span> Day-by-Day Itinerary
         </h3>
-        <div className="space-y-4">
+        <Accordion type="multiple" className="w-full space-y-2">
           {itinerary.days.map((day) => (
-            <Card key={day.dayNumber} className="border-2 hover:shadow-md transition-shadow">
-              <CardHeader className="pb-3 bg-slate-50">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <CardTitle className="text-lg flex items-center gap-2">
-                      <span className="bg-blue-600 text-white w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold">
-                        {day.dayNumber}
-                      </span>
-                      {day.title}
-                    </CardTitle>
-                    <CardDescription className="text-sm mt-1 ml-10">
-                      {day.date}
-                    </CardDescription>
-                  </div>
+            <AccordionItem key={day.dayNumber} value={`day-${day.dayNumber}`} className="border rounded-lg px-4 bg-white">
+              <AccordionTrigger className="hover:no-underline py-4">
+                <div className="flex flex-col items-start text-left w-full">
+                  <div className="font-semibold text-base">Day {day.dayNumber}</div>
+                  <div className="text-sm text-slate-600 mt-0.5">{day.date} • {day.title}</div>
                 </div>
-              </CardHeader>
-              <CardContent className="space-y-4 pt-4">
-                {/* Transport */}
-                {day.transport && (
-                  <div className="bg-green-50 p-3 rounded-lg border border-green-100">
-                    <div className="flex items-start gap-2">
-                      <span className="text-xl mt-0.5">🚗</span>
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-green-900 mb-2">Transportation</h4>
-                        <div className="text-sm text-green-800">
-                          {renderObject(day.transport)}
-                        </div>
-                      </div>
+              </AccordionTrigger>
+              <AccordionContent className="pb-4 pt-2">
+                <div className="space-y-4">
+                  {/* Transport */}
+                  {day.transport && (
+                    <div className="bg-slate-50 p-3 rounded-md">
+                      <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">🚗 Transport</h4>
+                      <div className="text-sm text-slate-700">{renderObject(day.transport)}</div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Accommodation */}
-                {day.accommodation && (
-                  <div className="bg-purple-50 p-3 rounded-lg border border-purple-100">
-                    <div className="flex items-start gap-2">
-                      <span className="text-xl mt-0.5">🏨</span>
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-purple-900 mb-1">Accommodation</h4>
-                        <p className="font-medium text-purple-800">{day.accommodation.name}</p>
-                        {day.accommodation.area && (
-                          <p className="text-sm text-purple-700 mt-1">📍 {day.accommodation.area}</p>
-                        )}
+                  {/* Accommodation */}
+                  {day.accommodation && (
+                    <div className="bg-slate-50 p-3 rounded-md">
+                      <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">🏨 Accommodation</h4>
+                      <div className="text-sm text-slate-700 space-y-1">
+                        <div><strong>Name:</strong> {day.accommodation.name}</div>
+                        {day.accommodation.area && <div><strong>Area:</strong> {day.accommodation.area}</div>}
                         {day.accommodation.estimatedCost && (
-                          <p className="text-sm text-purple-700 mt-1">💰 {day.accommodation.estimatedCost}</p>
+                          <div><strong>Cost:</strong> {day.accommodation.estimatedCost}</div>
                         )}
                       </div>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Meals */}
-                {day.meals && day.meals.length > 0 && (
-                  <div className="bg-orange-50 p-3 rounded-lg border border-orange-100">
-                    <div className="flex items-start gap-2">
-                      <span className="text-xl mt-0.5">🍽️</span>
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-orange-900 mb-2">Meals</h4>
-                        <div className="space-y-2">
-                          {day.meals.map((meal, idx) => (
-                            <div key={idx} className="text-sm">
-                              <span className="inline-block bg-orange-200 text-orange-900 px-2 py-0.5 rounded text-xs font-semibold uppercase mb-1">
-                                {meal.type}
-                              </span>
-                              <div className="text-orange-800 ml-1">
-                                {meal.suggestion}
-                                {meal.estimatedCost && <span className="text-xs ml-2">({meal.estimatedCost})</span>}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                  {/* Meals */}
+                  {day.meals && day.meals.length > 0 && (
+                    <div className="bg-slate-50 p-3 rounded-md">
+                      <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">🍽️ Meals</h4>
+                      <ul className="space-y-2 text-sm text-slate-700">
+                        {day.meals.map((meal, idx) => (
+                          <li key={idx} className="leading-relaxed">
+                            <strong className="text-slate-900">{meal.type}:</strong> {typeof meal.suggestion === 'string' ? meal.suggestion : renderObject(meal.suggestion)}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  </div>
-                )}
+                  )}
 
-                {/* Activities */}
-                {day.activities && day.activities.length > 0 && (
-                  <div className="bg-blue-50 p-3 rounded-lg border border-blue-100">
-                    <div className="flex items-start gap-2">
-                      <span className="text-xl mt-0.5">🎯</span>
-                      <div className="flex-1">
-                        <h4 className="font-semibold text-blue-900 mb-2">Activities</h4>
-                        <div className="space-y-2">
-                          {day.activities.map((activity, idx) => (
-                            <div key={idx} className="flex flex-col gap-1 text-sm bg-blue-50 p-2 rounded">
-                              <div className="font-semibold text-blue-900">{activity.name}</div>
-                              {activity.time && <div className="text-blue-700 text-xs">⏰ {activity.time}</div>}
-                              {activity.duration && <div className="text-blue-700 text-xs">⏱️ {activity.duration}</div>}
-                              {activity.description && <p className="text-blue-900 mt-1">{activity.description}</p>}
-                              {activity.estimatedCost && <div className="text-blue-700 text-xs">💰 {activity.estimatedCost}</div>}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+                  {/* Activities */}
+                  {day.activities && day.activities.length > 0 && (
+                    <div className="bg-slate-50 p-3 rounded-md">
+                      <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">🎯 Activities</h4>
+                      <ul className="space-y-2 text-sm text-slate-700">
+                        {day.activities.map((activity, idx) => (
+                          <li key={idx} className="leading-relaxed">
+                            {activity.name && <strong className="text-slate-900">{activity.name}</strong>}
+                            {activity.time && <span className="text-slate-600"> ({activity.time})</span>}
+                            {activity.duration && <span className="text-slate-600"> - {activity.duration}</span>}
+                          </li>
+                        ))}
+                      </ul>
                     </div>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
+                  )}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
           ))}
-        </div>
+        </Accordion>
       </div>
 
       {/* Alternative Options */}
-      {itinerary.alternativeOptions && (
+      {itinerary.alternativeOptions && countAlternatives(itinerary.alternativeOptions) > 0 && (
         <>
           <Separator />
           <div>
@@ -466,5 +430,14 @@ function renderObject(obj: unknown): React.ReactNode {
   }
 
   return <p>{String(obj)}</p>;
+}
+
+// Helper to count alternatives
+function countAlternatives(alternatives: { transport?: unknown[]; stays?: unknown[]; dining?: unknown[] }): number {
+  return (
+    (alternatives.transport?.length || 0) +
+    (alternatives.stays?.length || 0) +
+    (alternatives.dining?.length || 0)
+  );
 }
 

@@ -15,6 +15,20 @@ export interface Trip {
   _id?: ObjectId;
   userId: ObjectId;
   status: 'draft' | 'planning' | 'final';
+  title?: string; // Dynamic title like "Trip to Boston" or "NYC to Boston"
+  origin?: string;
+  destination?: string;
+  tripDates?: {
+    start?: string;
+    end?: string;
+  };
+  progress?: {
+    hasDestination: boolean;
+    hasOrigin: boolean;
+    hasDates: boolean;
+    hasItinerary: boolean;
+    percentComplete: number;
+  };
   tripContext: Record<string, unknown>;
   activeItinerary?: Record<string, unknown>;
   savedItineraries?: Array<{

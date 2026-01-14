@@ -195,7 +195,7 @@ function ItineraryOptionCard({
 
   return (
     <Card className="border-2 hover:border-blue-300 transition-all">
-      <CardHeader className="pb-3">
+      <CardHeader>
         <div className="flex items-start justify-between gap-4">
           <div className="flex-1">
             <CardTitle className="text-lg">{option.title}</CardTitle>
@@ -218,8 +218,8 @@ function ItineraryOptionCard({
           </Button>
         </div>
       </CardHeader>
-      <CardContent className="space-y-3 pt-0">
-        {/* Cost */}
+      <CardContent className="space-y-3">
+        {/* /* Cost */ }
         {option.estimatedTotalCost && (
           <div className="text-sm">
             <span className="font-medium">💰 Estimated Cost: </span>
@@ -272,7 +272,7 @@ function ItineraryOptionCard({
 
   return (
     <Card className="h-full flex flex-col overflow-hidden">
-      <CardHeader className="shrink-0 p-4 md:p-6">
+      <CardHeader className="shrink-0">
         <div className="flex justify-between items-start gap-2">
           <div className="flex-1 min-w-0">
             <CardTitle className="text-lg md:text-xl">Chat</CardTitle>
@@ -285,7 +285,7 @@ function ItineraryOptionCard({
               variant="outline"
               size="sm"
               onClick={onShowTrace}
-              className="shrink-0 lg:hidden min-h-11 md:min-h-9"
+              className="shrink-0 min-h-11 md:min-h-9"
             >
               <svg className="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
@@ -295,7 +295,7 @@ function ItineraryOptionCard({
           )}
         </div>
       </CardHeader>
-      <CardContent className="flex-1 flex flex-col gap-3 md:gap-4 overflow-hidden min-h-0 p-4 md:p-6">
+      <CardContent className="flex-1 flex flex-col overflow-hidden min-h-0">
         <div className="flex-1 overflow-y-auto pr-3 md:pr-4 scrollbar-thin min-h-0">
           {!tripId ? (
             <div className="text-center text-slate-500 py-8">
@@ -316,11 +316,13 @@ function ItineraryOptionCard({
                         message.role === 'user' ? 'secondary' :
                         message.role === 'master' ? 'default' :
                         message.role === 'specialist' ? 'outline' :
+                        message.role === 'system' ? 'default' :
                         'secondary'
                       }>
                         {message.role === 'user' ? '👤 You' :
                          message.role === 'master' ? '🤖 Master Agent' :
                          message.role === 'specialist' ? '⚙️ Specialist' :
+                         message.role === 'system' ? '📢 System' :
                          message.role}
                       </Badge>
                       {message.agentName && (
@@ -333,7 +335,7 @@ function ItineraryOptionCard({
                       </span>
                     </div>
                     <div className="text-sm text-slate-700 leading-relaxed">
-                      {message.role === 'master' || message.role === 'specialist'
+                      {message.role === 'master' || message.role === 'specialist' || message.role === 'system'
                         ? formatMessage(message.content)
                         : <div className="whitespace-pre-wrap">{message.content}</div>
                       }
@@ -401,7 +403,7 @@ function ItineraryOptionCard({
         </div>
 
         {tripId && (
-          <div className="flex gap-2 shrink-0 md:static sticky bottom-0 left-0 right-0 bg-white md:bg-transparent p-3 md:p-0 -mx-4 md:mx-0 -mb-4 md:mb-0 border-t md:border-t-0 border-slate-200 safe-bottom">
+          <div className="flex gap-2 shrink-0 md:static sticky bottom-0 left-0 right-0 bg-white md:bg-transparent p-3 md:p-0 -mx-4 md:mx-0 border-t md:border-t-0 border-slate-200 safe-bottom mb-2">
             <textarea
               ref={textareaRef}
               placeholder="Type your message..."

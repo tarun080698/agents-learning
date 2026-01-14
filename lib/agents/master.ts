@@ -317,7 +317,7 @@ SPECIALIST OUTPUTS:
 ${JSON.stringify(specialistOutputs, null, 2)}
 
 FINALIZE MODE OUTPUT (REQUIRED - USE THIS STRUCTURE):
-CRITICAL: You MUST create 2-3 different itinerary options for the user to choose from!
+IMPORTANT: Try to create 2-3 different itinerary options for the user to choose from. If the trip is simple or constraints are very specific, you may provide 1-2 options.
 
 {
   "mode": "FINALIZE",
@@ -660,7 +660,7 @@ export async function callMasterAgent(input: MasterAgentInput): Promise<MasterAg
           },
           {
             role: 'user',
-            content: `ERROR: You used mode="${normalizedOutput.mode}" but specialist outputs are present. You MUST use mode="FINALIZE" to merge the specialist recommendations into 2-3 different itinerary options. Return the complete JSON with mode="FINALIZE" and include the multipleItineraries field with options array.`,
+            content: `ERROR: You used mode="${normalizedOutput.mode}" but specialist outputs are present. You MUST use mode="FINALIZE" to merge the specialist recommendations into 1-3 different itinerary options (preferably 2-3). Return the complete JSON with mode="FINALIZE" and include the multipleItineraries field with options array.`,
           },
         ],
         response_format: { type: 'json_object' },

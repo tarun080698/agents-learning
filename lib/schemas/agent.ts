@@ -111,7 +111,7 @@ export const itineraryOptionSchema = z.object({
 
 // Multiple itineraries response
 export const multipleItinerariesSchema = z.object({
-  options: z.array(itineraryOptionSchema).min(2).max(3),
+  options: z.array(itineraryOptionSchema).min(1).max(3), // Allow 1-3 options (prefer 2-3)
   comparisonNote: z.string().optional(),
 });
 

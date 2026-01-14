@@ -95,7 +95,7 @@ export function ItinerarySelection({ multipleItineraries, onSelect, loading }: I
               )}
             </CardHeader>
 
-            <CardContent className="space-y-3">
+            <CardContent>
               {/* Estimated Cost */}
               {option.estimatedTotalCost && (
                 <div className="bg-slate-50 p-3 rounded-lg">

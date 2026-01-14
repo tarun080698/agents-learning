@@ -16,7 +16,7 @@ export async function POST(req: NextRequest, context: RouteContext) {
     const params = await context.params;
     const { tripId } = params;
     const body = await req.json();
-    const { itinerary, tripContext, name } = body;
+    const { itinerary, tripContext, name, runId } = body;
 
     if (!itinerary) {
       return NextResponse.json({ error: 'Itinerary is required' }, { status: 400 });
@@ -24,12 +24,27 @@ export async function POST(req: NextRequest, context: RouteContext) {
 
     const tripsCollection = await getTripsCollection();
 
+    // If runId is provided, check if an itinerary from this run already exists
+    if (runId) {
+      const trip = await tripsCollection.findOne({ _id: new ObjectId(tripId) });
+      if (trip && trip.savedItineraries) {
+        const alreadyExists = trip.savedItineraries.some((saved: any) => saved.runId === runId);
+        if (alreadyExists) {
+          return NextResponse.json(
+            { success: false, message: 'Itinerary from this run already saved' },
+            { status: 409 }
+          );
+        }
+      }
+    }
+
     const savedItinerary = {
       _id: new ObjectId().toString(),
       itinerary,
       tripContext: tripContext || null,
       savedAt: new Date(),
       name: name || `Itinerary saved at ${new Date().toLocaleString()}`,
+      runId: runId || undefined, // Track which run this itinerary came from
     };
 
     const result = await tripsCollection.updateOne(
