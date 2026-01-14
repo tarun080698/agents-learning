@@ -45,6 +45,15 @@ export const tripContextSchema = z.object({
   questionLedger: z.object({
     asked: z.array(questionLedgerEntrySchema),
   }).optional(),
+  // Explicit user decision log for workflow visibility
+  userDecisions: z.array(z.object({
+    id: z.string(),
+    type: z.enum(['confirm', 'select_itinerary', 'override']),
+    label: z.string(),
+    details: z.record(z.any()).optional(),
+    runId: z.string().optional(),
+    createdAt: z.string(), // ISO timestamp
+  })).optional().default([]),
 });
 
 // Task schema for specialist agents

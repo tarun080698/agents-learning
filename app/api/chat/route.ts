@@ -20,6 +20,7 @@ import {
   getQuestionContext,
 } from '@/lib/utils/questionLedger';
 import { generateTripMetadata } from '@/lib/utils/tripMetadata';
+import { modeToExecutionStage, convertAgentTaskToRunTask } from '@/lib/utils/runHelpers';
 
 // Request validation schema
 const chatRequestSchema = z.object({
@@ -159,6 +160,7 @@ export async function POST(req: NextRequest) {
         tripId: new ObjectId(tripId),
         userMessageId,
         status: 'error',
+        executionStage: 'error',
         error: agentResult.error || 'Unknown error',
         createdAt: now,
       });
@@ -220,6 +222,7 @@ export async function POST(req: NextRequest) {
         userMessageId,
         masterOutput: filteredOutput as Record<string, unknown>,
         status: 'ok',
+        executionStage: 'clarify', // Workflow visibility: stage tracking
         createdAt: new Date(),
       });
 
@@ -276,6 +279,7 @@ export async function POST(req: NextRequest) {
         userMessageId,
         masterOutput: masterOutput as Record<string, unknown>,
         status: 'awaiting_confirmation',
+        executionStage: 'confirm', // Workflow visibility: stage tracking
         createdAt: new Date(),
       });
 
@@ -298,26 +302,100 @@ export async function POST(req: NextRequest) {
 
       const tasks = masterOutput.tasks;
 
+      // Convert agent tasks to typed Run tasks with 'pending' status
+      const runTasks = tasks.map((task: Task) => convertAgentTaskToRunTask(task, 'pending'));
+
+      // Create initial run with dispatch stage and pending tasks
+      const initialRunResult = await runsCollection.insertOne({
+        tripId: new ObjectId(tripId),
+        userMessageId,
+        masterOutput: masterOutput as Record<string, unknown>,
+        dispatchOutput: masterOutput as Record<string, unknown>,
+        tasks: runTasks,
+        status: 'ok',
+        executionStage: 'dispatch', // Workflow visibility: initial dispatch stage
+        createdAt: new Date(),
+      });
+
+      const runId = initialRunResult.insertedId;
+
+      // Transition to research stage before calling specialists
+      await runsCollection.updateOne(
+        { _id: runId },
+        {
+          $set: {
+            executionStage: 'research',
+            updatedAt: new Date(),
+          },
+        }
+      );
+
       // Execute specialists in parallel
-      const specialistPromises = tasks.map(async (task: Task) => {
+      const specialistPromises = tasks.map(async (task: Task, index: number) => {
         try {
+          // Mark task as running
+          await runsCollection.updateOne(
+            { _id: runId, 'tasks.taskId': task.taskId },
+            {
+              $set: {
+                'tasks.$.status': 'running',
+                'tasks.$.startedAt': new Date(),
+              },
+            }
+          );
+
+          let result;
           if (task.specialist === 'transport') {
-            const result = await callTransportAgent(task);
-            return { task, ...result };
+            result = await callTransportAgent(task);
           } else if (task.specialist === 'stay') {
-            const result = await callStayAgent(task);
-            return { task, ...result };
+            result = await callStayAgent(task);
           } else if (task.specialist === 'food') {
-            const result = await callFoodAgent(task);
-            return { task, ...result };
+            result = await callFoodAgent(task);
           } else {
-            return {
-              task,
+            result = {
               success: false,
               error: `Unknown specialist: ${task.specialist}`,
             };
           }
+
+          // Mark task as completed or failed
+          if (result.error) {
+            await runsCollection.updateOne(
+              { _id: runId, 'tasks.taskId': task.taskId },
+              {
+                $set: {
+                  'tasks.$.status': 'failed',
+                  'tasks.$.error': result.error,
+                  'tasks.$.completedAt': new Date(),
+                },
+              }
+            );
+          } else {
+            await runsCollection.updateOne(
+              { _id: runId, 'tasks.taskId': task.taskId },
+              {
+                $set: {
+                  'tasks.$.status': 'completed',
+                  'tasks.$.completedAt': new Date(),
+                },
+              }
+            );
+          }
+
+          return { task, ...result };
         } catch (error) {
+          // Mark task as failed on exception
+          await runsCollection.updateOne(
+            { _id: runId, 'tasks.taskId': task.taskId },
+            {
+              $set: {
+                'tasks.$.status': 'failed',
+                'tasks.$.error': error instanceof Error ? error.message : 'Unknown error',
+                'tasks.$.completedAt': new Date(),
+              },
+            }
+          );
+
           return {
             task,
             success: false,
@@ -345,16 +423,18 @@ export async function POST(req: NextRequest) {
 
       // Even if some specialists fail, continue with merge if we have at least one success
       if (specialistOutputs.length === 0) {
-        // All specialists failed - create error run
-        await runsCollection.insertOne({
-          tripId: new ObjectId(tripId),
-          userMessageId,
-          masterOutput: masterOutput as Record<string, unknown>,
-          tasks: tasks as Record<string, unknown>[],
-          status: 'error',
-          error: `All specialists failed: ${errors.join('; ')}`,
-          createdAt: new Date(),
-        });
+        // All specialists failed - update run to error state
+        await runsCollection.updateOne(
+          { _id: runId },
+          {
+            $set: {
+              status: 'error',
+              executionStage: 'error',
+              error: `All specialists failed: ${errors.join('; ')}`,
+              updatedAt: new Date(),
+            },
+          }
+        );
 
         return NextResponse.json(
           {
@@ -364,6 +444,17 @@ export async function POST(req: NextRequest) {
           { status: 500 }
         );
       }
+
+      // Transition to finalize stage
+      await runsCollection.updateOne(
+        { _id: runId },
+        {
+          $set: {
+            executionStage: 'finalize',
+            updatedAt: new Date(),
+          },
+        }
+      );
 
       // Call master agent again in FINALIZE mode to merge itinerary
       const mergeResult = await callMasterAgent({
@@ -377,17 +468,19 @@ export async function POST(req: NextRequest) {
       });
 
       if (!mergeResult.success || !mergeResult.output) {
-        // Merge failed - save partial run
-        await runsCollection.insertOne({
-          tripId: new ObjectId(tripId),
-          userMessageId,
-          masterOutput: masterOutput as Record<string, unknown>,
-          tasks: tasks as Record<string, unknown>[],
-          specialistOutputs: specialistOutputs as Record<string, unknown>[],
-          status: 'error',
-          error: `Merge failed: ${mergeResult.error || 'Unknown error'}`,
-          createdAt: new Date(),
-        });
+        // Merge failed - update run
+        await runsCollection.updateOne(
+          { _id: runId },
+          {
+            $set: {
+              specialistOutputs: specialistOutputs as Record<string, unknown>[],
+              status: 'error',
+              executionStage: 'error',
+              error: `Merge failed: ${mergeResult.error || 'Unknown error'}`,
+              updatedAt: new Date(),
+            },
+          }
+        );
 
         return NextResponse.json(
           {
@@ -402,16 +495,18 @@ export async function POST(req: NextRequest) {
 
       // Validate FINALIZE mode
       if (finalizeOutput.mode !== 'FINALIZE') {
-        await runsCollection.insertOne({
-          tripId: new ObjectId(tripId),
-          userMessageId,
-          masterOutput: masterOutput as Record<string, unknown>,
-          tasks: tasks as Record<string, unknown>[],
-          specialistOutputs: specialistOutputs as Record<string, unknown>[],
-          status: 'error',
-          error: `Expected FINALIZE mode, got ${finalizeOutput.mode}`,
-          createdAt: new Date(),
-        });
+        await runsCollection.updateOne(
+          { _id: runId },
+          {
+            $set: {
+              specialistOutputs: specialistOutputs as Record<string, unknown>[],
+              status: 'error',
+              executionStage: 'error',
+              error: `Expected FINALIZE mode, got ${finalizeOutput.mode}`,
+              updatedAt: new Date(),
+            },
+          }
+        );
 
         return NextResponse.json(
           {
@@ -455,18 +550,23 @@ export async function POST(req: NextRequest) {
         }
       );
 
-      // Create complete run record with both dispatch and finalize outputs
-      const runResult = await runsCollection.insertOne({
-        tripId: new ObjectId(tripId),
-        userMessageId,
-        masterOutput: finalizeOutput as Record<string, unknown>,
-        dispatchOutput: masterOutput as Record<string, unknown>,
-        tasks: tasks as Record<string, unknown>[],
-        specialistOutputs: specialistOutputs as Record<string, unknown>[],
-        multipleItineraries: multipleItineraries as Record<string, unknown>,
-        status: 'ok',
-        createdAt: new Date(),
-      });
+      // Update run record with final outputs and completed stage
+      await runsCollection.updateOne(
+        { _id: runId },
+        {
+          $set: {
+            masterOutput: finalizeOutput as Record<string, unknown>,
+            specialistOutputs: specialistOutputs as Record<string, unknown>[],
+            multipleItineraries: multipleItineraries as Record<string, unknown>,
+            status: 'ok',
+            executionStage: 'completed', // Workflow visibility: final stage
+            updatedAt: new Date(),
+          },
+        }
+      );
+
+      // Fetch the complete run for response
+      const completeRun = await runsCollection.findOne({ _id: runId });
 
       return NextResponse.json(
         {
@@ -477,11 +577,13 @@ export async function POST(req: NextRequest) {
           tripContext: finalizeOutput.updatedTripContext,
           multipleItineraries,
           run: {
-            id: runResult.insertedId.toString(),
-            masterOutput,
-            tasks,
+            id: runId.toString(),
+            masterOutput: finalizeOutput,
+            dispatchOutput: masterOutput,
+            tasks: completeRun?.tasks, // Include task statuses for UI
             specialistOutputs,
             multipleItineraries,
+            executionStage: 'completed', // Include execution stage for UI
           },
         },
         { status: 200 }

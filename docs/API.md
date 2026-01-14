@@ -378,7 +378,7 @@ Currently uses username-based authentication stored in localStorage. No JWT or s
 }
 ```
 
-**Example 2: FINALIZE Mode (Multiple Itineraries)**
+**Example 2: FINALIZE Mode (Multiple Itineraries with Workflow Visibility)**
 ```json
 {
   "success": true,
@@ -389,9 +389,37 @@ Currently uses username-based authentication stored in localStorage. No JWT or s
     "_id": "507f1f77bcf86cd799439020",
     "tripId": "507f1f77bcf86cd799439012",
     "userMessageId": "507f1f77bcf86cd799439019",
-    "masterOutput": { /* dispatch mode output */ },
+    "masterOutput": { /* finalize mode output */ },
     "dispatchOutput": { /* dispatch details */ },
-    "tasks": [ /* specialist tasks */ ],
+    "tasks": [
+      {
+        "taskId": "task-1",
+        "taskName": "Get transport options",
+        "specialist": "transport",
+        "instructions": "Find flights and trains from NYC to Boston...",
+        "status": "completed",
+        "startedAt": "2026-01-14T10:55:01.000Z",
+        "completedAt": "2026-01-14T10:55:08.000Z"
+      },
+      {
+        "taskId": "task-2",
+        "taskName": "Find accommodation",
+        "specialist": "stay",
+        "instructions": "Recommend hotels in Boston...",
+        "status": "completed",
+        "startedAt": "2026-01-14T10:55:01.000Z",
+        "completedAt": "2026-01-14T10:55:12.000Z"
+      },
+      {
+        "taskId": "task-3",
+        "taskName": "Dining recommendations",
+        "specialist": "food",
+        "instructions": "Suggest restaurants and activities...",
+        "status": "completed",
+        "startedAt": "2026-01-14T10:55:01.000Z",
+        "completedAt": "2026-01-14T10:55:09.000Z"
+      }
+    ],
     "specialistOutputs": [ /* specialist recommendations */ ],
     "multipleItineraries": {
       "options": [
@@ -413,7 +441,9 @@ Currently uses username-based authentication stored in localStorage. No JWT or s
       "comparisonNote": "All options cover key Boston attractions but differ in comfort and cost"
     },
     "status": "ok",
-    "createdAt": "2026-01-14T11:00:00.000Z"
+    "executionStage": "completed",
+    "createdAt": "2026-01-14T10:54:50.000Z",
+    "updatedAt": "2026-01-14T10:56:00.000Z"
   }
 }
 ```
@@ -456,7 +486,7 @@ If agent output fails Zod validation:
 
 **Endpoint:** `PATCH /api/runs/{runId}`
 
-**Description:** Updates run status and selected option (used when user selects an itinerary).
+**Description:** Updates run status and selected option (used when user selects an itinerary). Automatically sets executionStage to 'completed' when status changes to 'itinerary_selected'.
 
 **Request Body:**
 ```json
@@ -473,6 +503,11 @@ If agent output fails Zod validation:
 }
 ```
 
+**Internal Behavior:**
+- When `status` is set to `'itinerary_selected'`, automatically sets `executionStage` to `'completed'`
+- Updates `updatedAt` timestamp
+- Used by itinerary selection flow to mark runs as completed
+
 **Error Responses:**
 - `400 Bad Request` - Invalid runId
 - `404 Not Found` - Run not found
@@ -484,7 +519,7 @@ If agent output fails Zod validation:
 
 **Endpoint:** `GET /api/trips/{tripId}/latest-run`
 
-**Description:** Retrieves the most recent successful run (status: 'ok' or 'completed') for a trip.
+**Description:** Retrieves the most recent successful run for a trip. Returns runs with status 'ok', 'completed', or 'itinerary_selected'. Legacy runs are automatically normalized with inferred executionStage and task statuses.
 
 **Success Response (200 OK):**
 ```json
@@ -495,9 +530,40 @@ If agent output fails Zod validation:
     "userMessageId": "507f1f77bcf86cd799439019",
     "masterOutput": { /* master agent output */ },
     "dispatchOutput": { /* dispatch output */ },
-    "tasks": [ /* tasks array */ ],
+    "tasks": [
+      {
+        "taskId": "task-1",
+        "taskName": "Get transport options",
+        "specialist": "transport",
+        "instructions": "Find flights and trains...",
+        "status": "completed",
+        "startedAt": "2026-01-14T10:55:01.000Z",
+        "completedAt": "2026-01-14T10:55:08.000Z"
+      }
+      // ... more tasks
+    ],
     "specialistOutputs": [ /* specialist outputs */ ],
     "multipleItineraries": { /* itinerary options */ },
+    "status": "itinerary_selected",
+    "selectedOptionId": "opt-2",
+    "executionStage": "completed",
+    "createdAt": "2026-01-14T10:54:50.000Z",
+    "updatedAt": "2026-01-14T11:05:30.000Z"
+  }
+}
+```
+
+**Workflow Visibility Features:**
+- `executionStage`: Current stage ('clarify' | 'confirm' | 'dispatch' | 'research' | 'finalize' | 'completed' | 'error')
+- `tasks[].status`: Individual task progress ('pending' | 'running' | 'completed' | 'failed')
+- `tasks[].startedAt/completedAt`: Timing information for each specialist execution
+- Legacy runs are normalized on read with inferred stages/statuses
+
+**No Run Found:**
+```json
+{
+  "run": null
+}
     "status": "itinerary_selected",
     "selectedOptionId": "opt-2",
     "createdAt": "2026-01-14T11:00:00.000Z"
@@ -517,7 +583,7 @@ If agent output fails Zod validation:
 
 **Endpoint:** `POST /api/trips/{tripId}/itineraries`
 
-**Description:** Saves a selected itinerary to trip.savedItineraries array. Prevents duplicate saves from same run.
+**Description:** Saves a selected itinerary to trip.savedItineraries array and logs the user decision in tripContext.userDecisions for workflow visibility. Prevents duplicate saves from same run.
 
 **Request Body:**
 ```json
@@ -543,6 +609,24 @@ If agent output fails Zod validation:
   }
 }
 ```
+
+**Internal Behavior:**
+- Saves itinerary to `trip.savedItineraries` array
+- Appends user decision entry to `tripContext.userDecisions`:
+  ```json
+  {
+    "id": "dec-507f...",
+    "type": "select_itinerary",
+    "label": "Selected itinerary: My Boston Adventure",
+    "details": {
+      "optionId": "itin-507f1f77bcf86cd799439021",
+      "optionTitle": "My Boston Adventure",
+      "runId": "507f1f77bcf86cd799439020"
+    },
+    "runId": "507f1f77bcf86cd799439020",
+    "createdAt": "2026-01-14T11:05:00.000Z"
+  }
+  ```
 
 **Duplicate Prevention (409 Conflict):**
 ```json

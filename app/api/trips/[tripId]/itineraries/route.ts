@@ -47,10 +47,27 @@ export async function POST(req: NextRequest, context: RouteContext) {
       runId: runId || undefined, // Track which run this itinerary came from
     };
 
+    // Workflow visibility: log user decision when itinerary is selected
+    const userDecision = {
+      id: new ObjectId().toString(),
+      type: 'select_itinerary' as const,
+      label: `Selected itinerary: ${name || 'Unnamed itinerary'}`,
+      details: {
+        optionId: savedItinerary._id,
+        optionTitle: name || 'Unnamed itinerary',
+        runId: runId || null,
+      },
+      runId: runId || undefined,
+      createdAt: new Date().toISOString(),
+    };
+
     const result = await tripsCollection.updateOne(
       { _id: new ObjectId(tripId) },
       {
-        $push: { savedItineraries: savedItinerary } as never,
+        $push: {
+          savedItineraries: savedItinerary,
+          'tripContext.userDecisions': userDecision,
+        } as never,
         $set: { updatedAt: new Date() },
       }
     );

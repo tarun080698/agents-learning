@@ -328,7 +328,19 @@ interface Run {
   // Agent outputs (stored as Record for flexibility)
   masterOutput?: Record<string, unknown>;        // Master agent's initial response
   dispatchOutput?: Record<string, unknown>;      // Dispatch mode output
-  tasks?: Record<string, unknown>[];             // Specialist tasks
+
+  // Tasks with status tracking for workflow visibility
+  tasks?: Array<{
+    taskId: string;                    // Unique task identifier (e.g., "task-1", "transport-001")
+    taskName?: string;                 // Human-readable task name
+    specialist: 'transport' | 'stay' | 'food' | string; // Specialist agent type
+    instructions: string;              // Instructions for specialist
+    status: 'pending' | 'running' | 'completed' | 'failed'; // Task execution status
+    startedAt?: Date;                  // When specialist started work
+    completedAt?: Date;                // When specialist finished
+    error?: string;                    // Error message if status='failed'
+  }>;
+
   specialistOutputs?: Record<string, unknown>[]; // Specialist recommendations
   mergedItinerary?: Record<string, unknown>;     // Single merged itinerary (legacy)
   multipleItineraries?: Record<string, unknown>; // Multiple itinerary options
@@ -336,6 +348,11 @@ interface Run {
   // Status tracking
   status: string;                      // 'ok', 'completed', 'itinerary_selected', 'error'
   selectedOptionId?: string;           // Which itinerary option user selected
+
+  // Workflow visibility: execution stage for UI timeline rendering
+  // Optional for backward compatibility with old runs
+  executionStage?: 'clarify' | 'confirm' | 'dispatch' | 'research' | 'finalize' | 'completed' | 'error';
+
   error?: string;                      // Error message if status='error'
 
   createdAt: Date;
@@ -675,6 +692,15 @@ export const tripContextSchema = z.object({
   questionLedger: z.object({
     asked: z.array(questionLedgerEntrySchema),
   }).optional(),
+  // Explicit user decision log for workflow visibility
+  userDecisions: z.array(z.object({
+    id: z.string(),
+    type: z.enum(['confirm', 'select_itinerary', 'override']),
+    label: z.string(),
+    details: z.record(z.any()).optional(),
+    runId: z.string().optional(),
+    createdAt: z.string(), // ISO timestamp
+  })).optional().default([]),
 });
 ```
 
@@ -798,21 +824,122 @@ export const itineraryOptionSchema = z.object({
 
 ---
 
+### Workflow Visibility and Execution Stages
+
+**Purpose:** Track agent execution progress for UI timeline rendering and parallel task visualization.
+
+**Execution Stage Lifecycle:**
+
+```
+CLARIFY → User provides info
+CONFIRM → User confirms or modifies
+DISPATCH → Master creates tasks (tasks.status = 'pending')
+RESEARCH → Specialists execute in parallel (tasks.status transitions)
+FINALIZE → Master merges outputs
+COMPLETED → Itineraries ready or selected
+ERROR → Failure at any stage
+```
+
+**Stage Transitions in POST /api/chat:**
+
+```
+1. Master Agent returns mode → Map to executionStage
+   CLARIFY mode → executionStage = 'clarify'
+   CONFIRM mode → executionStage = 'confirm'
+   DISPATCH mode → executionStage = 'dispatch' (initial)
+
+2. Before calling specialists → executionStage = 'research'
+
+3. For each specialist task:
+   Before call → Update task: status = 'running', startedAt = now
+   After success → Update task: status = 'completed', completedAt = now
+   After failure → Update task: status = 'failed', error = message, completedAt = now
+
+4. Before calling Master FINALIZE → executionStage = 'finalize'
+
+5. After FINALIZE success → executionStage = 'completed'
+
+6. On any error → executionStage = 'error'
+```
+
+**Task Status Updates (Atomic):**
+
+```typescript
+// Mark task as running
+await runsCollection.updateOne(
+  { _id: runId, 'tasks.taskId': 'task-1' },
+  {
+    $set: {
+      'tasks.$.status': 'running',
+      'tasks.$.startedAt': new Date(),
+    },
+  }
+);
+
+// Mark task as completed
+await runsCollection.updateOne(
+  { _id: runId, 'tasks.taskId': 'task-1' },
+  {
+    $set: {
+      'tasks.$.status': 'completed',
+      'tasks.$.completedAt': new Date(),
+    },
+  }
+);
+```
+
+**User Decision Logging:**
+
+When itinerary is selected:
+```typescript
+const userDecision = {
+  id: new ObjectId().toString(),
+  type: 'select_itinerary',
+  label: 'Selected itinerary: Balanced Experience',
+  details: {
+    optionId: 'opt-2',
+    optionTitle: 'Balanced Experience',
+    runId: '507f...',
+  },
+  runId: '507f...',
+  createdAt: new Date().toISOString(),
+};
+
+await tripsCollection.updateOne(
+  { _id: tripId },
+  {
+    $push: {
+      'tripContext.userDecisions': userDecision,
+    },
+  }
+);
+```
+
+**Backward Compatibility:**
+
+Legacy runs (without executionStage/task statuses) are normalized on read:
+- `executionStage` inferred from status/masterOutput.mode/specialistOutputs presence
+- Task status inferred: 'completed' if specialistOutputs exist, else 'pending'
+- Normalization helper: `normalizeLegacyRun(run)` in `lib/utils/runHelpers.ts`
+
+---
+
 ### Itinerary Selection Flow
 
 ```
 1. User selects itinerary option
    → Frontend calls handleSelectItinerary(option)
 
-2. Save to trip.savedItineraries
+2. Save to trip.savedItineraries AND log decision
    → POST /api/trips/{tripId}/itineraries
    → Body: { itinerary, tripContext, name, runId }
    → Push to savedItineraries array (limit 20)
+   → Push to tripContext.userDecisions array
 
-3. Update run status
+3. Update run status AND executionStage
    → PATCH /api/runs/{runId}
    → Body: { status: "itinerary_selected", selectedOptionId: "opt-2" }
-   → Update run { status, selectedOptionId, updatedAt }
+   → Update run { status, selectedOptionId, executionStage: "completed", updatedAt }
 
 4. Save confirmation message
    → POST /api/messages
@@ -822,6 +949,7 @@ export const itineraryOptionSchema = z.object({
    → PATCH /api/trips/{tripId}
    → Body: { updateMetadata: true, tripContext }
    → Update { title, progress, updatedAt }
+```
 
 6. Reload data
    → GET /api/trips?userId={userId}  (reload trips with new metadata)

@@ -58,13 +58,27 @@ export interface Run {
   userMessageId: ObjectId;
   masterOutput?: Record<string, unknown>;
   dispatchOutput?: Record<string, unknown>;
-  tasks?: Record<string, unknown>[];
+  tasks?: Array<{
+    taskId: string;
+    taskName?: string;
+    specialist: 'transport' | 'stay' | 'food' | string;
+    instructions: string;
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    startedAt?: Date;
+    completedAt?: Date;
+    error?: string;
+  }>;
   specialistOutputs?: Record<string, unknown>[];
   mergedItinerary?: Record<string, unknown>;
   multipleItineraries?: Record<string, unknown>;
   status: string;
+  selectedOptionId?: string;
+  // Workflow visibility: execution stage for UI timeline rendering
+  // Optional for backward compatibility with old runs
+  executionStage?: 'clarify' | 'confirm' | 'dispatch' | 'research' | 'finalize' | 'completed' | 'error';
   error?: string;
   createdAt: Date;
+  updatedAt?: Date;
 }
 
 // Collection getters

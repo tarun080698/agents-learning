@@ -19,17 +19,22 @@ export async function PATCH(req: NextRequest, context: RouteContext) {
     }
 
     const runsCollection = await getRunsCollection();
-    
+
     const updateFields: any = {};
-    
+
     if (body.status) {
       updateFields.status = body.status;
+
+      // Workflow visibility: set executionStage to 'completed' when itinerary is selected
+      if (body.status === 'itinerary_selected') {
+        updateFields.executionStage = 'completed';
+      }
     }
-    
+
     if (body.selectedOptionId) {
       updateFields.selectedOptionId = body.selectedOptionId;
     }
-    
+
     updateFields.updatedAt = new Date();
 
     const result = await runsCollection.updateOne(
